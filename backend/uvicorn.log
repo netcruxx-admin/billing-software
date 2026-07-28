@@ -1,0 +1,15 @@
+INFO:     Started server process [19716]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+ERROR:    [Errno 10048] error while attempting to bind on address ('127.0.0INFO:     127.0.0.1:50456 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53604 - "POST /api/auth/register HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53610 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53611 - "GET /api/businesses HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53619 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53622 - "POST /api/auth/login HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:53554 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53554 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53555 - "GET /api/businesses HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55104 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50285 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54164 - "GET /api/health HTTP/1.1" 200 OK

@@ -1,0 +1,20 @@
+npm warn Unknown user config "python". This will stop working in the next major version of npm.
+
+> my-project@0.1.0 dev
+> next dev
+
+⚠ Port 3000 is in use by process 17416, using available port 3001 instead.
+▲ Next.js 16.2.6 (Turbopack)
+- Local:         http://localhost:3001
+- Network:       http://192.168.0.246:3001
+- Environments: .env.local
+✓ Ready in 2.2s
+⨯ Another next dev server is already running.
+
+- Local:        http://localhost:3000
+- PID:          17416
+- Dir:          C:\Users\ASUS\Downloads\billing-software
+- Log:          .next\dev\logs\next-development.log
+
+Run taskkill /PID 17416 /F to stop it.
+[?25h

@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, decimal, integer } from 'drizzle-orm/pg-core'
+import { pgTable, text, timestamp, boolean, decimal } from 'drizzle-orm/pg-core'
 
 // --- Better Auth required tables -------------------------------------------
 // Column names are camelCase to match Better Auth's defaults. Do not rename.
@@ -80,17 +80,28 @@ export const business = pgTable('business', {
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 })
 
+// Category table for inventory grouping
+export const category = pgTable('category', {
+  id: text('id').primaryKey(),
+  businessId: text('businessId').notNull().references(() => business.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  description: text('description'),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+})
+
 // Product table for inventory
 export const product = pgTable('product', {
   id: text('id').primaryKey(),
   businessId: text('businessId').notNull().references(() => business.id, { onDelete: 'cascade' }),
+  categoryId: text('categoryId').references(() => category.id, { onDelete: 'set null' }),
   name: text('name').notNull(),
   description: text('description'),
   sku: text('sku'),
   price: decimal('price', { precision: 10, scale: 2 }).notNull(),
   costPrice: decimal('costPrice', { precision: 10, scale: 2 }),
-  quantity: integer('quantity').notNull().default(0),
-  category: text('category'),
+  quantity: decimal('quantity', { precision: 12, scale: 3 }).notNull().default('0'),
+  unit: text('unit').notNull().default('pcs'),
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 })
@@ -133,7 +144,8 @@ export const invoiceItem = pgTable('invoice_item', {
   invoiceId: text('invoiceId').notNull().references(() => invoice.id, { onDelete: 'cascade' }),
   productId: text('productId').references(() => product.id, { onDelete: 'set null' }),
   description: text('description').notNull(),
-  quantity: integer('quantity').notNull(),
+  quantity: decimal('quantity', { precision: 12, scale: 3 }).notNull(),
+  unit: text('unit').notNull().default('pcs'),
   unitPrice: decimal('unitPrice', { precision: 10, scale: 2 }).notNull(),
   amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
   createdAt: timestamp('createdAt').notNull().defaultNow(),

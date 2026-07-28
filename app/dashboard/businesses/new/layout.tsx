@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { getDemoSession } from '@/lib/demo-auth'
+import { getSession } from '@/lib/session'
 import { DashboardHeader } from '@/components/dashboard-header'
 import { DashboardSidebar } from '@/components/dashboard-sidebar'
 
@@ -8,7 +8,7 @@ export default async function NewBusinessLayout({
 }: {
   children: React.ReactNode
 }) {
-  const session = await getDemoSession()
+  const session = await getSession()
   if (!session?.user) redirect('/sign-in')
 
   return (

@@ -1,16 +1,26 @@
 'use server'
 
-import { demoDb } from '@/lib/demo-db'
 import { revalidatePath } from 'next/cache'
+import { apiFetch } from '@/lib/api'
+
+export interface Customer {
+  id: string
+  businessId: string
+  name: string
+  email?: string | null
+  phone?: string | null
+  address?: string | null
+  taxId?: string | null
+  createdAt: string
+  updatedAt: string
+}
 
 export async function getCustomers(businessId: string) {
-  return demoDb.getCustomers(businessId)
+  return apiFetch<Customer[]>(`/api/businesses/${businessId}/customers`)
 }
 
 export async function getCustomer(customerId: string, businessId: string) {
-  const cust = await demoDb.getCustomer(businessId, customerId)
-  if (!cust) throw new Error('Customer not found')
-  return cust
+  return apiFetch<Customer>(`/api/businesses/${businessId}/customers/${customerId}`)
 }
 
 export async function createCustomer(businessId: string, data: {
@@ -20,21 +30,23 @@ export async function createCustomer(businessId: string, data: {
   address?: string
   taxId?: string
 }) {
-  const customer = await demoDb.createCustomer(businessId, data)
+  const customer = await apiFetch<Customer>(`/api/businesses/${businessId}/customers`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
   revalidatePath(`/dashboard/businesses/${businessId}`)
   return customer.id
 }
 
 export async function updateCustomer(customerId: string, businessId: string, data: any) {
-  const cust = await demoDb.getCustomer(businessId, customerId)
-  if (!cust) throw new Error('Customer not found')
-
-  Object.assign(cust, data, { updatedAt: new Date() })
+  await apiFetch<Customer>(`/api/businesses/${businessId}/customers/${customerId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
   revalidatePath(`/dashboard/businesses/${businessId}`)
 }
 
 export async function deleteCustomer(customerId: string, businessId: string) {
-  const deleted = await demoDb.deleteCustomer(businessId, customerId)
-  if (!deleted) throw new Error('Customer not found')
+  await apiFetch<void>(`/api/businesses/${businessId}/customers/${customerId}`, { method: 'DELETE' })
   revalidatePath(`/dashboard/businesses/${businessId}`)
 }

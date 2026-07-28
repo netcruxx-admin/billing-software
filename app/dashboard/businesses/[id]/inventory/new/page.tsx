@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getBusiness } from '@/app/actions/businesses'
+import { getCategories } from '@/app/actions/categories'
 import { ProductForm } from '@/components/product-form'
 
 type NewProductPageProps = {
@@ -10,7 +11,10 @@ export default async function NewProductPage({ params }: NewProductPageProps) {
   const { id } = await params
 
   try {
-    const business = await getBusiness(id)
+    const [business, categories] = await Promise.all([
+      getBusiness(id),
+      getCategories(id),
+    ])
 
     return (
       <div className="p-8">
@@ -21,7 +25,7 @@ export default async function NewProductPage({ params }: NewProductPageProps) {
           </div>
 
           <div className="bg-card border border-border rounded-lg p-8">
-            <ProductForm businessId={id} />
+            <ProductForm businessId={id} categories={categories} />
           </div>
         </div>
       </div>

@@ -1,10 +1,10 @@
 import Link from 'next/link'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, paymentMethodLabel } from '@/lib/utils'
 
 interface Payment {
   id: string
   invoiceId: string
-  invoiceNumber: string
+  invoiceNumber?: string
   amount: string | number
   method: string
   createdAt: Date | string
@@ -35,14 +35,14 @@ export function PaymentList({ payments, businessId }: PaymentListProps) {
                   href={`/dashboard/businesses/${businessId}/invoices/${p.invoiceId}`}
                   className="text-primary hover:text-primary/80 font-medium"
                 >
-                  {p.invoiceNumber}
+                  {p.invoiceNumber ?? 'Unknown'}
                 </Link>
               </td>
               <td className="py-4 px-4 text-muted-foreground">
                 {new Date(p.createdAt).toLocaleDateString()}
               </td>
-              <td className="py-4 px-4 text-muted-foreground capitalize">
-                {p.method.replace('_', ' ')}
+              <td className="py-4 px-4 text-muted-foreground">
+                {paymentMethodLabel(p.method)}
               </td>
               <td className="py-4 px-4 text-green-600 font-semibold">
                 +{formatCurrency(p.amount)}

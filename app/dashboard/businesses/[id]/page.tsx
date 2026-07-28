@@ -4,13 +4,19 @@ import { getBusiness, deleteBusiness } from '@/app/actions/businesses'
 import { getInvoices } from '@/app/actions/invoices'
 import { getCustomers } from '@/app/actions/customers'
 import { getProducts } from '@/app/actions/products'
+import { getCategories } from '@/app/actions/categories'
 import { getBusinessPayments } from '@/app/actions/payments'
+import { getPurchases } from '@/app/actions/purchases'
+import { getSuppliers } from '@/app/actions/suppliers'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { InvoiceList } from '@/components/invoice-list'
 import { ProductList } from '@/components/product-list'
+import { CategoryList } from '@/components/category-list'
 import { CustomerList } from '@/components/customer-list'
 import { PaymentList } from '@/components/payment-list'
+import { PurchaseList } from '@/components/purchase-list'
+import { SupplierList } from '@/components/supplier-list'
 import { DeleteButton } from '@/components/delete-button'
 
 type BusinessDetailsPageProps = {
@@ -18,7 +24,7 @@ type BusinessDetailsPageProps = {
   searchParams: Promise<{ tab?: string }>
 }
 
-const VALID_TABS = ['invoices', 'inventory', 'customers', 'payments', 'analytics']
+const VALID_TABS = ['invoices', 'inventory', 'purchases', 'customers', 'payments', 'analytics']
 
 export default async function BusinessDetailsPage({ params, searchParams }: BusinessDetailsPageProps) {
   const { id: businessId } = await params
@@ -26,13 +32,22 @@ export default async function BusinessDetailsPage({ params, searchParams }: Busi
   const defaultTab = VALID_TABS.includes(tab ?? '') ? (tab as string) : 'invoices'
 
   try {
-    const [business, invoices, customers, products, payments] = await Promise.all([
+    const [business, invoices, customers, products, categories, payments, purchases, suppliers] = await Promise.all([
       getBusiness(businessId),
       getInvoices(businessId),
       getCustomers(businessId),
       getProducts(businessId),
+      getCategories(businessId),
       getBusinessPayments(businessId),
+      getPurchases(businessId),
+      getSuppliers(businessId),
     ])
+
+    const categoryNames = Object.fromEntries(categories.map((c) => [c.id, c.name]))
+    const productCounts = products.reduce((acc: Record<string, number>, p) => {
+      if (p.categoryId) acc[p.categoryId] = (acc[p.categoryId] || 0) + 1
+      return acc
+    }, {})
 
     return (
       <div className="p-8">
@@ -58,9 +73,10 @@ export default async function BusinessDetailsPage({ params, searchParams }: Busi
           </div>
 
           <Tabs defaultValue={defaultTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-5">
+            <TabsList className="grid w-full grid-cols-6">
               <TabsTrigger value="invoices">Invoices</TabsTrigger>
               <TabsTrigger value="inventory">Inventory</TabsTrigger>
+              <TabsTrigger value="purchases">Purchases</TabsTrigger>
               <TabsTrigger value="customers">Customers</TabsTrigger>
               <TabsTrigger value="payments">Payments</TabsTrigger>
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
@@ -83,6 +99,22 @@ export default async function BusinessDetailsPage({ params, searchParams }: Busi
             </TabsContent>
 
             <TabsContent value="inventory" className="mt-6">
+              <div className="bg-card border border-border rounded-lg p-8 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold text-foreground">Categories ({categories.length})</h2>
+                  <Link href={`/dashboard/businesses/${businessId}/categories/new`}>
+                    <Button variant="outline">Add Category</Button>
+                  </Link>
+                </div>
+                {categories.length === 0 ? (
+                  <p className="text-muted-foreground">
+                    No categories yet. Add a category first — products are organized inside categories.
+                  </p>
+                ) : (
+                  <CategoryList categories={categories} businessId={businessId} productCounts={productCounts} />
+                )}
+              </div>
+
               <div className="bg-card border border-border rounded-lg p-8">
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-2xl font-bold text-foreground">Products & Inventory ({products.length})</h2>
@@ -93,7 +125,37 @@ export default async function BusinessDetailsPage({ params, searchParams }: Busi
                 {products.length === 0 ? (
                   <p className="text-muted-foreground">No products yet. Add items to your inventory.</p>
                 ) : (
-                  <ProductList products={products} businessId={businessId} />
+                  <ProductList products={products} businessId={businessId} categoryNames={categoryNames} />
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="purchases" className="mt-6">
+              <div className="bg-card border border-border rounded-lg p-8 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold text-foreground">Suppliers ({suppliers.length})</h2>
+                  <Link href={`/dashboard/businesses/${businessId}/suppliers/new`}>
+                    <Button variant="outline">Add Supplier</Button>
+                  </Link>
+                </div>
+                {suppliers.length === 0 ? (
+                  <p className="text-muted-foreground">No suppliers yet. Add a supplier to track who you buy from.</p>
+                ) : (
+                  <SupplierList suppliers={suppliers} businessId={businessId} />
+                )}
+              </div>
+
+              <div className="bg-card border border-border rounded-lg p-8">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold text-foreground">Purchases ({purchases.length})</h2>
+                  <Link href={`/dashboard/businesses/${businessId}/purchases/new`}>
+                    <Button>Record Purchase</Button>
+                  </Link>
+                </div>
+                {purchases.length === 0 ? (
+                  <p className="text-muted-foreground">No purchases yet. Record a purchase to receive stock and generate a purchase challan.</p>
+                ) : (
+                  <PurchaseList purchases={purchases} businessId={businessId} />
                 )}
               </div>
             </TabsContent>

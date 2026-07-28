@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { getBusiness } from '@/app/actions/businesses'
 import { getProduct } from '@/app/actions/products'
+import { getCategories } from '@/app/actions/categories'
 import { ProductForm } from '@/components/product-form'
 
 type EditProductPageProps = {
@@ -11,9 +12,10 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
   const { id, productId } = await params
 
   try {
-    const [business, product] = await Promise.all([
+    const [business, product, categories] = await Promise.all([
       getBusiness(id),
       getProduct(productId, id),
+      getCategories(id),
     ])
 
     return (
@@ -25,7 +27,7 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
           </div>
 
           <div className="bg-card border border-border rounded-lg p-8">
-            <ProductForm businessId={id} product={product} />
+            <ProductForm businessId={id} categories={categories} product={product} />
           </div>
         </div>
       </div>

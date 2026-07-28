@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createInvoice } from '@/app/actions/invoices'
@@ -9,10 +10,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { formatCurrency, GST_RATES, cn } from '@/lib/utils'
+import { formatCurrency, GST_RATES, SOLD_BY_OPTIONS, PAYMENT_MODES, TIME_UNITS, cn, invoiceLayout, invoiceReferenceLabel, pricePerGram, unitLabel } from '@/lib/utils'
 
 interface BusinessInfo {
   name: string
+  type?: string
   taxId?: string | null
   address?: string | null
   phone?: string | null
@@ -28,37 +30,138 @@ interface CustomerInfo {
   taxId?: string | null
 }
 
+interface ProductVariantInfo {
+  id: string
+  packSize?: string | null
+  sku?: string | null
+  price: string | number
+  quantity: number
+  mrp?: string | number | null
+  isLoose: boolean
+}
+
+interface ProductInfo {
+  id: string
+  name: string
+  unit?: string | null
+  gstRate?: number | null
+  hsnCode?: string | null
+  variants: ProductVariantInfo[]
+}
+
+// A sellable line — one per (product, pack size) combination, since price
+// and stock are tracked per pack size, not per product.
+interface SellableItem {
+  id: string // the variant id; used as the suggestion list's react key
+  productId: string
+  variantId: string
+  name: string
+  price: number
+  quantity: number
+  unit?: string | null
+  gstRate?: number | null
+  hsnCode?: string | null
+  mrp?: number | null
+  packSize?: string | null
+  isLoose: boolean
+}
+
 interface InvoiceFormProps {
   businessId: string
   business?: BusinessInfo
   customers?: CustomerInfo[]
-  products?: Array<{ id: string; name: string; price: string | number; quantity: number }>
+  products?: ProductInfo[]
 }
 
 interface InvoiceLineItem {
   productId?: string
+  variantId?: string
   description: string
-  quantity: number
+  quantity: number | ''
+  unit?: string
   unitPrice: number
+  taxRate: number
+  hsnCode?: string
+  mrp?: number | ''
+  packSize?: string
+  // Whether this line's quantity is an exact weight in grams (a bulk item
+  // weighed out at the counter) rather than a plain pack/piece count.
+  // Independent of packSize, which is just the pack's descriptive label.
+  isLoose?: boolean
+  cdRate?: number
+  giftNote?: string
 }
 
-const NO_PRODUCT = '__none__'
+const DEFAULT_ITEM: InvoiceLineItem = { description: '', quantity: '', unitPrice: 0, taxRate: 18, cdRate: 0, isLoose: false }
+
+// A blank quantity means a flat-fee line item (e.g. a service charge) —
+// treat it as a single unit for the on-screen total preview, matching the
+// backend's amount calculation.
+const effectiveQuantity = (quantity: number | '') => (quantity === '' ? 1 : Number(quantity))
+// The gift note is purely informational (e.g. "free sample from company")
+// and has no effect on pricing — the line is still billed normally.
+const lineGross = (item: InvoiceLineItem) => effectiveQuantity(item.quantity) * Number(item.unitPrice)
+const lineAmount = (item: InvoiceLineItem) => {
+  const gross = lineGross(item)
+  const discountRate = Number(item.cdRate) || 0
+  return gross - gross * (discountRate / 100)
+}
 
 export function InvoiceForm({ businessId, business, customers = [], products = [] }: InvoiceFormProps) {
   const router = useRouter()
+  const isOffice = business?.type === 'office'
+  const buildItem = (): InvoiceLineItem => ({ ...DEFAULT_ITEM, unit: isOffice ? 'month' : undefined })
   const [loading, setLoading] = useState(false)
-  const [items, setItems] = useState<InvoiceLineItem[]>([
-    { description: '', quantity: 1, unitPrice: 0 }
-  ])
+  const [items, setItems] = useState<InvoiceLineItem[]>([buildItem()])
   const [formData, setFormData] = useState({
     customerId: '',
     invoiceDate: new Date().toISOString().split('T')[0],
     dueDate: '',
+    deliveryDate: '',
+    paymentMode: 'cash',
     notes: '',
-    taxRate: 18,
+    referenceNote: '',
   })
+  const referenceLabel = invoiceReferenceLabel(business?.type)
+  const layout = invoiceLayout(business?.type)
+  // One sellable entry per (product, pack size) — price and stock are
+  // tracked per pack size, so billing has to pick a specific variant, not
+  // just the parent product.
+  const sellableItems: SellableItem[] = products.flatMap((p) =>
+    p.variants.map((v) => ({
+      id: v.id,
+      productId: p.id,
+      variantId: v.id,
+      name: p.name + (v.packSize ? ` (${unitLabel(v.packSize)})` : ''),
+      price: Number(v.price),
+      quantity: v.quantity,
+      unit: p.unit,
+      gstRate: p.gstRate,
+      hsnCode: p.hsnCode,
+      mrp: v.mrp != null ? Number(v.mrp) : null,
+      packSize: v.packSize,
+      isLoose: v.isLoose,
+    }))
+  )
   const [customerMode, setCustomerMode] = useState<'existing' | 'new'>(customers.length > 0 ? 'existing' : 'new')
   const [newCustomer, setNewCustomer] = useState({ name: '', taxId: '', phone: '', email: '', address: '' })
+  // Which item row's product-name suggestion list is open, if any, and where
+  // to position it. Portaled to <body> (see render below) because the items
+  // table scrolls horizontally (`overflow-x-auto`), which per the CSS spec
+  // forces vertical overflow to clip too — an absolutely-positioned dropdown
+  // nested inside that container would get silently cut off.
+  const [suggestIndex, setSuggestIndex] = useState<number | null>(null)
+  const [suggestPos, setSuggestPos] = useState<{ top: number; left: number; width: number } | null>(null)
+  const descriptionInputRefs = useRef<(HTMLInputElement | null)[]>([])
+
+  const openSuggestions = (index: number) => {
+    setSuggestIndex(index)
+    const el = descriptionInputRefs.current[index]
+    if (el) {
+      const rect = el.getBoundingClientRect()
+      setSuggestPos({ top: rect.bottom, left: rect.left, width: Math.max(rect.width, 220) })
+    }
+  }
 
   const handleItemChange = (index: number, field: string, value: any) => {
     const newItems = [...items]
@@ -66,41 +169,106 @@ export function InvoiceForm({ businessId, business, customers = [], products = [
     setItems(newItems)
   }
 
-  const handleProductSelect = (index: number, productId: string) => {
-    if (productId === NO_PRODUCT) {
-      const newItems = [...items]
-      newItems[index] = { ...newItems[index], productId: undefined }
-      setItems(newItems)
-      return
-    }
-
-    const product = products.find((p) => p.id === productId)
-    if (!product) return
+  const handleVariantSelect = (index: number, variantId: string) => {
+    const variant = sellableItems.find((v) => v.variantId === variantId)
+    if (!variant) return
 
     const newItems = [...items]
     newItems[index] = {
       ...newItems[index],
-      productId: product.id,
-      description: product.name,
-      unitPrice: Number(product.price),
+      productId: variant.productId,
+      variantId: variant.variantId,
+      description: variant.name,
+      unitPrice: variant.price,
+      isLoose: variant.isLoose,
+      unit: isOffice
+        ? newItems[index].unit ?? 'month'
+        : variant.isLoose
+          ? 'g'
+          : variant.unit ?? 'pcs',
+      taxRate: variant.gstRate != null ? Number(variant.gstRate) : newItems[index].taxRate,
+      hsnCode: variant.hsnCode ?? undefined,
+      mrp: variant.mrp != null ? Number(variant.mrp) : '',
+      packSize: variant.packSize ?? undefined,
+      // Inventory items need a real quantity for stock deduction — default
+      // to 1 if the field was left blank when the product was picked.
+      quantity: newItems[index].quantity === '' ? 1 : newItems[index].quantity,
     }
     setItems(newItems)
   }
 
+  // Manually overrides how this line's quantity is entered — lets a cashier
+  // mark an ad-hoc line (not linked to any product) as loose, e.g. loose
+  // vegetables that aren't in the catalog. Also sets a sensible default
+  // unit right away, otherwise an untouched line would fall back to 'pcs'
+  // at submit time (see handleSubmit below), misrepresenting what was sold.
+  const handleSoldByChange = (index: number, soldBy: string) => {
+    const isLoose = soldBy === 'loose'
+    const newItems = [...items]
+    const linkedVariant = findSellable(newItems[index].variantId)
+    newItems[index] = {
+      ...newItems[index],
+      isLoose,
+      unit: isLoose ? 'g' : (linkedVariant?.unit ?? newItems[index].unit ?? 'pcs'),
+    }
+    setItems(newItems)
+  }
+
+  // A loose (weighed) line's invoice quantity is the exact grams the
+  // cashier types, not a fixed pack count — so the Rate has to become a
+  // per-gram price for quantity * rate to still equal the correct total.
+  // Only applies to product-linked items, since an unlinked line has no
+  // per-kg base price to convert from.
+  const handleLooseGramsChange = (index: number, gramsInput: string) => {
+    const newItems = [...items]
+    const item = newItems[index]
+    const linkedVariant = findSellable(item.variantId)
+    newItems[index] = {
+      ...item,
+      quantity: (gramsInput === '' ? '' : gramsInput) as number | '',
+      unit: 'g',
+      unitPrice: linkedVariant ? pricePerGram(linkedVariant.price) : item.unitPrice,
+    }
+    setItems(newItems)
+  }
+
+  // Sellable items whose name matches what's been typed into a row's
+  // Description field so far — powers the type-ahead suggestion list that
+  // replaces the old separate "pick from inventory" dropdown.
+  const productSuggestions = (query: string) => {
+    const q = query.trim().toLowerCase()
+    if (!q) return []
+    return sellableItems.filter((v) => v.name.toLowerCase().includes(q)).slice(0, 8)
+  }
+
   const addItem = () => {
-    setItems([...items, { description: '', quantity: 1, unitPrice: 0 }])
+    setItems([...items, buildItem()])
   }
 
   const removeItem = (index: number) => {
     setItems(items.filter((_, i) => i !== index))
   }
 
-  const subtotal = items.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.unitPrice)), 0)
-  const taxRate = Number(formData.taxRate) || 0
-  const tax = subtotal * (taxRate / 100)
+  const subtotal = items.reduce((sum, item) => sum + lineAmount(item), 0)
+  const taxBreakdown = (() => {
+    const groups = new Map<number, { taxable: number; tax: number }>()
+    for (const item of items) {
+      const rate = Number(item.taxRate) || 0
+      if (rate <= 0) continue
+      const amount = lineAmount(item)
+      const bucket = groups.get(rate) ?? { taxable: 0, tax: 0 }
+      bucket.taxable += amount
+      bucket.tax += amount * (rate / 100)
+      groups.set(rate, bucket)
+    }
+    return Array.from(groups.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([rate, v]) => ({ rate, ...v }))
+  })()
+  const tax = taxBreakdown.reduce((sum, b) => sum + b.tax, 0)
   const total = subtotal + tax
 
-  const findProduct = (productId?: string) => products.find((p) => p.id === productId)
+  const findSellable = (variantId?: string) => sellableItems.find((v) => v.variantId === variantId)
   const selectedCustomer = customers.find((c) => c.id === formData.customerId)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -124,13 +292,23 @@ export function InvoiceForm({ businessId, business, customers = [], products = [
         customerId,
         invoiceDate: new Date(formData.invoiceDate),
         dueDate: formData.dueDate ? new Date(formData.dueDate) : undefined,
+        deliveryDate: layout === 'retail' && formData.deliveryDate ? new Date(formData.deliveryDate) : undefined,
+        paymentMode: layout === 'retail' ? formData.paymentMode : undefined,
         notes: formData.notes,
-        taxRate: Number(formData.taxRate) || 0,
+        referenceNote: formData.referenceNote.trim() || undefined,
         items: items.map(item => ({
           productId: item.productId,
+          variantId: item.variantId,
           description: item.description,
-          quantity: Number(item.quantity),
+          quantity: item.quantity === '' ? undefined : Number(item.quantity),
+          unit: item.unit || 'pcs',
           unitPrice: Number(item.unitPrice),
+          taxRate: Number(item.taxRate) || 0,
+          hsnCode: item.hsnCode || undefined,
+          mrp: item.mrp !== '' && item.mrp != null ? Number(item.mrp) : undefined,
+          packSize: item.packSize || undefined,
+          cdRate: layout === 'retail' ? Number(item.cdRate) || 0 : undefined,
+          giftNote: layout === 'retail' ? (item.giftNote?.trim() || undefined) : undefined,
         })),
       }
 
@@ -165,6 +343,46 @@ export function InvoiceForm({ businessId, business, customers = [], products = [
             onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
           />
         </div>
+        {referenceLabel && (
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">{referenceLabel}</label>
+            <Input
+              value={formData.referenceNote}
+              onChange={(e) => setFormData({ ...formData, referenceNote: e.target.value })}
+              placeholder={referenceLabel}
+            />
+          </div>
+        )}
+        {layout === 'retail' && (
+          <>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">Delivery Date</label>
+              <Input
+                type="date"
+                value={formData.deliveryDate}
+                onChange={(e) => setFormData({ ...formData, deliveryDate: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">Mode</label>
+              <Select
+                value={formData.paymentMode}
+                onValueChange={(value) => setFormData(prev => ({ ...prev, paymentMode: value ?? prev.paymentMode }))}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue>
+                    {(value: string) => PAYMENT_MODES.find(m => m.value === value)?.label ?? 'Cash'}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_MODES.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Billed By / Bill To */}
@@ -236,7 +454,9 @@ export function InvoiceForm({ businessId, business, customers = [], products = [
                 onValueChange={(value) => setFormData({ ...formData, customerId: value ?? '' })}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select a customer (optional)" />
+                  <SelectValue placeholder="Select a customer (optional)">
+                    {(value: string) => (value ? customers.find(c => c.id === value)?.name : 'Select a customer (optional)')}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {customers.map(c => (
@@ -294,84 +514,254 @@ export function InvoiceForm({ businessId, business, customers = [], products = [
       {/* Invoice Items */}
       <div>
         <h3 className="text-lg font-semibold text-foreground mb-4">Invoice Items</h3>
-        <div className="space-y-4">
-          {items.map((item, index) => {
-            const linkedProduct = findProduct(item.productId)
-            const overStock = linkedProduct != null && Number(item.quantity) > linkedProduct.quantity
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="bg-accent/50 text-left text-xs font-medium text-muted-foreground">
+                <th className="px-2 py-2 w-20">#</th>
+                <th className="px-2 py-2 w-64">Item</th>
+                {layout === 'retail' && <th className="px-2 py-2 w-10">HSN Code</th>}
+                {layout === 'retail' && <th className="px-2 py-2 w-20">Sold By</th>}
+                {layout === 'retail' && <th className="px-2 py-2 w-15 text-right">MRP</th>}
+                <th className="px-2 py-2 w-10 text-right">{isOffice ? 'Duration' : layout === 'retail' ? 'Unit' : 'Qty'}</th>
+                <th className="px-2 py-2 w-20 text-right">Rate</th>
+                {layout === 'retail' && <th className="px-2 py-2 w-10 text-right">CD%</th>}
+                {layout === 'retail' && <th className="px-2 py-2 w-20">Gift</th>}
+                <th className="px-2 py-2 w-20 text-right">Tax%</th>
+                {layout === 'retail' ? (
+                  <th className="px-2 py-2 w-20 text-right">Gross Amt</th>
+                ) : (
+                  <th className="px-2 py-2 w-20 text-right">Amount</th>
+                )}
+                <th className="px-2 py-2 w-20" />
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item, index) => {
+                const linkedVariant = findSellable(item.variantId)
+                const overStock = linkedVariant != null && effectiveQuantity(item.quantity) > linkedVariant.quantity
+                const gross = lineGross(item)
+                const amount = lineAmount(item)
 
-            return (
-              <div key={index} className="bg-accent/50 p-4 rounded-lg space-y-3">
-                <div className="grid grid-cols-12 gap-4 items-end">
-                  {products.length > 0 && (
-                    <div className="col-span-12 md:col-span-3">
+                return (
+                  <tr key={index} className="border-t border-border align-top">
+                    <td className="px-2 py-2 text-muted-foreground">{index + 1}</td>
+                    <td className="px-2 py-2 relative">
+                      <Input
+                        ref={(el) => { descriptionInputRefs.current[index] = el }}
+                        aria-label="Description"
+                        placeholder="Type to search products..."
+                        value={item.description}
+                        onChange={(e) => {
+                          handleItemChange(index, 'description', e.target.value)
+                          openSuggestions(index)
+                        }}
+                        onFocus={() => openSuggestions(index)}
+                        onBlur={() => setTimeout(() => setSuggestIndex((cur) => (cur === index ? null : cur)), 150)}
+                        required
+                      />
+                      {overStock && (
+                        <p className="text-xs text-orange-600 mt-1">
+                          Only {linkedVariant!.quantity} in stock
+                        </p>
+                      )}
+                    </td>
+                    {layout === 'retail' && (
+                      <td className="px-2 py-2">
+                        <Input
+                          aria-label="HSN Code"
+                          placeholder="HSN"
+                          className="w-10"
+                          value={item.hsnCode ?? ''}
+                          onChange={(e) => handleItemChange(index, 'hsnCode', e.target.value)}
+                        />
+                      </td>
+                    )}
+                    {layout === 'retail' && (
+                      <td className="px-2 py-2">
+                        <Select
+                          value={item.isLoose ? 'loose' : 'unit'}
+                          onValueChange={(value) => handleSoldByChange(index, value ?? 'unit')}
+                        >
+                          <SelectTrigger aria-label="Sold By" className="w-20">
+                            <SelectValue>
+                              {(value: string) => SOLD_BY_OPTIONS.find(p => p.value === value)?.label ?? 'Piece'}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent className="min-w-fit">
+                            {SOLD_BY_OPTIONS.map((p) => (
+                              <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </td>
+                    )}
+                    {layout === 'retail' && (
+                      <td className="px-2 py-2">
+                        <Input
+                          aria-label="MRP"
+                          type="text"
+                          inputMode="decimal"
+                          className="w-15 text-right"
+                          value={item.mrp ?? ''}
+                          onChange={(e) => handleItemChange(index, 'mrp', e.target.value === '' ? '' : e.target.value)}
+                        />
+                      </td>
+                    )}
+                    <td className="px-2 py-2">
+                      {layout === 'retail' ? (
+                        !item.isLoose ? (
+                          <Input
+                            aria-label="Quantity"
+                            type="text"
+                            inputMode="numeric"
+                            className="w-10 text-right"
+                            placeholder="1"
+                            value={item.quantity}
+                            onChange={(e) => handleItemChange(index, 'quantity', e.target.value === '' ? '' : e.target.value)}
+                          />
+                        ) : (
+                          <Input
+                            aria-label="Grams"
+                            type="text"
+                            inputMode="decimal"
+                            className="w-10 text-right"
+                            placeholder="Grams"
+                            value={item.quantity}
+                            onChange={(e) => handleLooseGramsChange(index, e.target.value)}
+                          />
+                        )
+                      ) : (
+                        <>
+                          <Input
+                            aria-label={isOffice ? 'Duration' : 'Quantity'}
+                            type="text"
+                            inputMode="decimal"
+                            className="w-10 text-right"
+                            placeholder={isOffice ? '1' : item.productId ? '' : 'Flat fee'}
+                            value={item.quantity}
+                            onChange={(e) => handleItemChange(index, 'quantity', e.target.value === '' ? '' : e.target.value)}
+                            required={!!item.productId}
+                          />
+                          {isOffice && (
+                            <Select
+                              value={item.unit ?? 'month'}
+                              onValueChange={(value) => handleItemChange(index, 'unit', value ?? 'month')}
+                            >
+                              <SelectTrigger className="w-full mt-1 h-7 text-xs">
+                                <SelectValue>{(value: string) => TIME_UNITS.find(u => u.value === value)?.label ?? 'Month'}</SelectValue>
+                              </SelectTrigger>
+                              <SelectContent>
+                                {TIME_UNITS.map((u) => (
+                                  <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </>
+                      )}
+                    </td>
+                    <td className="px-2 py-2">
+                      <Input
+                        aria-label="Rate"
+                        type="text"
+                        inputMode="decimal"
+                        className="w-20 text-right"
+                        value={item.unitPrice}
+                        onChange={(e) => handleItemChange(index, 'unitPrice', e.target.value)}
+                        required
+                      />
+                    </td>
+                    {layout === 'retail' && (
+                      <td className="px-2 py-2">
+                        <Input
+                          aria-label="CD%"
+                          type="text"
+                          inputMode="decimal"
+                          className="w-10 text-right"
+                          value={item.cdRate ?? 0}
+                          onChange={(e) => handleItemChange(index, 'cdRate', e.target.value)}
+                        />
+                      </td>
+                    )}
+                    {layout === 'retail' && (
+                      <td className="px-2 py-2">
+                        <Input
+                          aria-label="Gift"
+                          placeholder="e.g. Free gift box"
+                          className="w-20"
+                          value={item.giftNote ?? ''}
+                          onChange={(e) => handleItemChange(index, 'giftNote', e.target.value)}
+                        />
+                      </td>
+                    )}
+                    <td className="px-2 py-2">
                       <Select
-                        value={item.productId ?? NO_PRODUCT}
-                        onValueChange={(value) => handleProductSelect(index, value ?? NO_PRODUCT)}
+                        value={String(item.taxRate)}
+                        onValueChange={(value) => handleItemChange(index, 'taxRate', Number(value ?? 0))}
                       >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="From inventory" />
+                        <SelectTrigger className="w-20">
+                          <SelectValue>{(value: string) => `${value}%`}</SelectValue>
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value={NO_PRODUCT}>Custom item</SelectItem>
-                          {products.map((p) => (
-                            <SelectItem key={p.id} value={p.id}>
-                              {p.name} ({p.quantity} in stock)
-                            </SelectItem>
+                          {GST_RATES.map((rate) => (
+                            <SelectItem key={rate} value={String(rate)}>{rate}%</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
-                  )}
-                  <Input
-                    placeholder="Description"
-                    value={item.description}
-                    onChange={(e) => handleItemChange(index, 'description', e.target.value)}
-                    className={products.length > 0 ? 'col-span-12 md:col-span-4' : 'col-span-5'}
-                    required
-                  />
-                  <Input
-                    placeholder="Qty"
-                    type="number"
-                    min="1"
-                    value={item.quantity}
-                    onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
-                    className={products.length > 0 ? 'col-span-4 md:col-span-2' : 'col-span-2'}
-                    required
-                  />
-                  <Input
-                    placeholder="Price"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={item.unitPrice}
-                    onChange={(e) => handleItemChange(index, 'unitPrice', e.target.value)}
-                    className={products.length > 0 ? 'col-span-4 md:col-span-2' : 'col-span-2'}
-                    required
-                  />
-                  <div className={`text-right ${products.length > 0 ? 'col-span-3 md:col-span-1' : 'col-span-2'}`}>
-                    {formatCurrency(Number(item.quantity) * Number(item.unitPrice))}
-                  </div>
-                  {items.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeItem(index)}
-                      className="col-span-1"
-                    >
-                      ✕
-                    </Button>
-                  )}
-                </div>
-                {overStock && (
-                  <p className="text-xs text-orange-600">
-                    Only {linkedProduct!.quantity} in stock — this will bring inventory negative-safe (clamped to 0).
-                  </p>
-                )}
-              </div>
-            )
-          })}
+                    </td>
+                    {layout === 'retail' ? (
+                      <td className="px-2 py-2 text-right font-medium text-foreground whitespace-nowrap">{formatCurrency(gross)}</td>
+                    ) : (
+                      <td className="px-2 py-2 text-right font-medium text-foreground whitespace-nowrap">{formatCurrency(amount)}</td>
+                    )}
+                    <td className="px-2 py-2">
+                      {items.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeItem(index)}
+                        >
+                          ✕
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
+        {suggestIndex !== null && suggestPos && typeof document !== 'undefined' && (() => {
+          const matches = productSuggestions(items[suggestIndex]?.description ?? '')
+          if (matches.length === 0) return null
+          return createPortal(
+            <div
+              style={{ position: 'fixed', top: suggestPos.top, left: suggestPos.left, width: suggestPos.width }}
+              className="z-50 rounded-lg border border-border bg-popover shadow-md max-h-48 overflow-y-auto"
+            >
+              {matches.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    handleVariantSelect(suggestIndex, p.variantId)
+                    setSuggestIndex(null)
+                  }}
+                  className="block w-full text-left px-3 py-2 text-sm hover:bg-accent"
+                >
+                  {p.name}{' '}
+                  <span className="text-xs text-muted-foreground">
+                    ({p.quantity} {unitLabel(p.unit)} in stock)
+                  </span>
+                </button>
+              ))}
+            </div>,
+            document.body
+          )
+        })()}
         <Button
           type="button"
           variant="outline"
@@ -388,30 +778,12 @@ export function InvoiceForm({ businessId, business, customers = [], products = [
           <span className="text-muted-foreground">Subtotal:</span>
           <span className="font-medium">{formatCurrency(subtotal)}</span>
         </div>
-        <div className="flex justify-between items-center">
-          <label htmlFor="taxRate" className="text-sm text-muted-foreground">GST:</label>
-          <div className="w-32">
-            <Select
-              value={String(formData.taxRate)}
-              onValueChange={(value) => setFormData({ ...formData, taxRate: Number(value ?? 0) })}
-            >
-              <SelectTrigger id="taxRate" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {GST_RATES.map((rate) => (
-                  <SelectItem key={rate} value={String(rate)}>
-                    {rate}%
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        {taxBreakdown.map((b) => (
+          <div key={b.rate} className="flex justify-between text-sm">
+            <span className="text-muted-foreground">GST {b.rate}%:</span>
+            <span className="font-medium">{formatCurrency(b.tax)}</span>
           </div>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">GST Amount:</span>
-          <span className="font-medium">{formatCurrency(tax)}</span>
-        </div>
+        ))}
         <div className="border-t border-border pt-3 flex justify-between text-lg">
           <span className="font-semibold text-foreground">Total:</span>
           <span className="font-bold text-primary">{formatCurrency(total)}</span>

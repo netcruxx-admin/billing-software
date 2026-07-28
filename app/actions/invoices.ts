@@ -1,105 +1,127 @@
 'use server'
 
-import { demoDb } from '@/lib/demo-db'
 import { revalidatePath } from 'next/cache'
-import { nanoid } from 'nanoid'
+import { apiFetch } from '@/lib/api'
 
-export async function getInvoices(businessId: string) {
-  return demoDb.getInvoices(businessId)
+export interface InvoiceItem {
+  id: string
+  invoiceId: string
+  productId?: string | null
+  variantId?: string | null
+  description: string
+  quantity: number | null
+  unit?: string | null
+  unitPrice: number
+  amount: number
+  taxRate: number
+  taxAmount: number
+  hsnCode?: string | null
+  mrp?: number | null
+  packSize?: string | null
+  categoryName?: string | null
+  cdRate: number
+  tdRate: number
+  discountAmount: number
+  giftNote?: string | null
+  createdAt: string
 }
 
-export async function getInvoice(invoiceId: string) {
-  const invoice = await demoDb.getInvoice(invoiceId)
-  if (!invoice) throw new Error('Invoice not found')
-  const items = await demoDb.getInvoiceItems(invoiceId)
-  return { ...invoice, items }
+export interface TaxBreakdown {
+  rate: number
+  taxableAmount: number
+  taxAmount: number
+}
+
+export interface Invoice {
+  id: string
+  businessId: string
+  customerId?: string | null
+  invoiceNumber: string
+  invoiceDate: string
+  dueDate?: string | null
+  subtotal: number
+  tax: number
+  total: number
+  status: string
+  notes?: string | null
+  referenceNote?: string | null
+  paidAmount?: number | null
+  deliveryDate?: string | null
+  paymentMode?: string | null
+  createdAt: string
+  updatedAt: string
+  customerName?: string | null
+}
+
+export interface InvoiceDetail extends Invoice {
+  items: InvoiceItem[]
+  taxBreakdown: TaxBreakdown[]
+}
+
+export async function getInvoices(businessId: string) {
+  return apiFetch<Invoice[]>(`/api/businesses/${businessId}/invoices`)
+}
+
+export async function getInvoice(invoiceId: string, businessId: string) {
+  return apiFetch<InvoiceDetail>(`/api/businesses/${businessId}/invoices/${invoiceId}`)
 }
 
 export async function getInvoiceById(invoiceId: string, businessId: string) {
-  const invoice = await demoDb.getInvoice(invoiceId)
-  if (!invoice || invoice.businessId !== businessId) throw new Error('Invoice not found')
-  return invoice
+  return apiFetch<InvoiceDetail>(`/api/businesses/${businessId}/invoices/${invoiceId}`)
 }
 
-export async function getInvoiceItems(invoiceId: string) {
-  return demoDb.getInvoiceItems(invoiceId)
+export async function getInvoiceItems(invoiceId: string, businessId: string) {
+  const invoice = await apiFetch<InvoiceDetail>(`/api/businesses/${businessId}/invoices/${invoiceId}`)
+  return invoice.items
 }
 
 export async function createInvoice(businessId: string, data: {
   customerId?: string
   invoiceDate: Date
   dueDate?: Date
+  deliveryDate?: Date
+  paymentMode?: string
   items: Array<{
     productId?: string
+    variantId?: string
     description: string
-    quantity: number
+    quantity?: number
+    unit?: string
     unitPrice: number
+    taxRate?: number
+    hsnCode?: string
+    mrp?: number
+    packSize?: string
+    cdRate?: number
+    tdRate?: number
+    giftNote?: string
   }>
   notes?: string
-  taxRate?: number
+  referenceNote?: string
 }) {
-  const invoiceId = nanoid()
-  const invoiceNumber = `INV-${Date.now()}`
-
-  // Calculate totals. Tax is GST, expressed as a percentage of the subtotal.
-  const subtotal = data.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
-  const taxRate = data.taxRate || 0
-  const tax = Math.round(subtotal * (taxRate / 100) * 100) / 100
-  const total = subtotal + tax
-
-  // Create invoice
-  const invoice = await demoDb.createInvoice(businessId, {
-    customerId: data.customerId,
-    invoiceNumber,
-    invoiceDate: data.invoiceDate,
-    dueDate: data.dueDate,
-    subtotal,
-    taxRate,
-    tax,
-    total,
-    notes: data.notes,
-    status: 'draft',
-    paidAmount: 0,
+  const invoice = await apiFetch<InvoiceDetail>(`/api/businesses/${businessId}/invoices`, {
+    method: 'POST',
+    body: JSON.stringify({
+      ...data,
+      invoiceDate: data.invoiceDate.toISOString(),
+      dueDate: data.dueDate ? data.dueDate.toISOString() : undefined,
+      deliveryDate: data.deliveryDate ? data.deliveryDate.toISOString() : undefined,
+    }),
   })
 
-  // Create invoice items and deduct stock for items linked to a product
-  for (const item of data.items) {
-    const amount = item.quantity * item.unitPrice
-    await demoDb.createInvoiceItem(invoiceId, {
-      productId: item.productId,
-      description: item.description,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      amount,
-    })
-
-    if (item.productId) {
-      await demoDb.adjustProductStock(item.productId, -item.quantity)
-    }
-  }
-
   revalidatePath(`/dashboard/businesses/${businessId}`)
-  return invoiceId
-}
-
-export async function updateInvoice(invoiceId: string, businessId: string, data: any) {
-  const invoice = await demoDb.getInvoice(invoiceId)
-  if (!invoice || invoice.businessId !== businessId) throw new Error('Invoice not found')
-
-  Object.assign(invoice, data, { updatedAt: new Date() })
-  revalidatePath(`/dashboard/businesses/${businessId}`)
+  return invoice.id
 }
 
 export async function deleteInvoice(invoiceId: string, businessId: string) {
-  const deleted = await demoDb.deleteInvoice(businessId, invoiceId)
-  if (!deleted) throw new Error('Invoice not found')
+  await apiFetch<void>(`/api/businesses/${businessId}/invoices/${invoiceId}`, { method: 'DELETE' })
   revalidatePath(`/dashboard/businesses/${businessId}`)
 }
 
 export async function markInvoicePaid(invoiceId: string, businessId: string, paidAmount: number) {
-  const invoice = await demoDb.getInvoice(invoiceId)
-  if (!invoice || invoice.businessId !== businessId) throw new Error('Invoice not found')
-
-  await demoDb.updateInvoicePayment(invoiceId, paidAmount, 'paid')
+  await apiFetch<InvoiceDetail>(`/api/businesses/${businessId}/invoices/${invoiceId}/mark-paid`, {
+    method: 'POST',
+    body: JSON.stringify({ paidAmount }),
+  })
   revalidatePath(`/dashboard/businesses/${businessId}`)
 }

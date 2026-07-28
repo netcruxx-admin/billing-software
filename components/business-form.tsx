@@ -12,6 +12,7 @@ const BUSINESS_TYPES = [
   { value: 'hotel', label: 'Hotel' },
   { value: 'store', label: 'General Store/Retail' },
   { value: 'cafe', label: 'Cafe' },
+  { value: 'office', label: 'Office Work' },
   { value: 'other', label: 'Other' },
 ]
 
@@ -23,6 +24,8 @@ interface ExistingBusiness {
   phone?: string | null
   email?: string | null
   taxId?: string | null
+  fssaiNo?: string | null
+  cstDate?: string | null
 }
 
 interface BusinessFormProps {
@@ -40,6 +43,8 @@ export function BusinessForm({ business }: BusinessFormProps) {
     phone: business?.phone ?? '',
     email: business?.email ?? '',
     taxId: business?.taxId ?? '',
+    fssaiNo: business?.fssaiNo ?? '',
+    cstDate: business?.cstDate ? business.cstDate.split('T')[0] : '',
   })
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -51,11 +56,12 @@ export function BusinessForm({ business }: BusinessFormProps) {
     e.preventDefault()
     setLoading(true)
     try {
+      const payload = { ...formData, cstDate: formData.cstDate || undefined }
       if (isEditing && business) {
-        await updateBusiness(business.id, formData)
+        await updateBusiness(business.id, payload)
         router.push(`/dashboard/businesses/${business.id}`)
       } else {
-        const businessId = await createBusiness(formData)
+        const businessId = await createBusiness(payload)
         router.push(`/dashboard/businesses/${businessId}`)
       }
     } catch (error) {
@@ -89,7 +95,9 @@ export function BusinessForm({ business }: BusinessFormProps) {
         </label>
         <Select value={formData.type} onValueChange={(value) => setFormData(prev => ({ ...prev, type: value ?? prev.type }))}>
           <SelectTrigger className="w-full">
-            <SelectValue />
+            <SelectValue>
+              {(value: string) => BUSINESS_TYPES.find(t => t.value === value)?.label ?? 'Select a type'}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {BUSINESS_TYPES.map(type => (
@@ -154,6 +162,34 @@ export function BusinessForm({ business }: BusinessFormProps) {
           value={formData.taxId}
           onChange={handleChange}
           placeholder="22AAAAA0000A1Z5"
+          className="w-full"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="fssaiNo" className="block text-sm font-medium text-foreground mb-2">
+          FSSAI No.
+        </label>
+        <Input
+          id="fssaiNo"
+          name="fssaiNo"
+          value={formData.fssaiNo}
+          onChange={handleChange}
+          placeholder="10917004000080"
+          className="w-full"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="cstDate" className="block text-sm font-medium text-foreground mb-2">
+          CST Registration Date
+        </label>
+        <Input
+          id="cstDate"
+          name="cstDate"
+          type="date"
+          value={formData.cstDate}
+          onChange={handleChange}
           className="w-full"
         />
       </div>

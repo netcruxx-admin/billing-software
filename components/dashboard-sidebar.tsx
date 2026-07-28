@@ -2,21 +2,25 @@
 
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
+import { dashboardModuleLabels } from '@/lib/utils'
 
 interface DashboardSidebarProps {
   businessId?: string
+  businessType?: string | null
 }
 
-export function DashboardSidebar({ businessId }: DashboardSidebarProps) {
+export function DashboardSidebar({ businessId, businessType }: DashboardSidebarProps) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const activeTab = searchParams.get('tab')
+  const modules = dashboardModuleLabels(businessType)
 
   const navItems = businessId
     ? [
         { label: 'Overview', href: `/dashboard/businesses/${businessId}`, match: (p: string) => p === `/dashboard/businesses/${businessId}` && !activeTab, icon: '🏠' },
         { label: 'Invoices', href: `/dashboard/businesses/${businessId}?tab=invoices`, match: () => activeTab === 'invoices', icon: '📄' },
-        { label: 'Inventory', href: `/dashboard/businesses/${businessId}?tab=inventory`, match: () => activeTab === 'inventory', icon: '📦' },
+        { label: modules.inventory.label, href: `/dashboard/businesses/${businessId}?tab=inventory`, match: () => activeTab === 'inventory', icon: modules.inventory.icon },
+        { label: 'Purchases', href: `/dashboard/businesses/${businessId}?tab=purchases`, match: () => activeTab === 'purchases', icon: '🧾' },
         { label: 'Customers', href: `/dashboard/businesses/${businessId}?tab=customers`, match: () => activeTab === 'customers', icon: '👥' },
         { label: 'Payments', href: `/dashboard/businesses/${businessId}?tab=payments`, match: () => activeTab === 'payments', icon: '💳' },
         { label: 'Analytics', href: `/dashboard/businesses/${businessId}/analytics`, match: (p: string) => p === `/dashboard/businesses/${businessId}/analytics`, icon: '📈' },

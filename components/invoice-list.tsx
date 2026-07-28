@@ -9,10 +9,10 @@ import { formatCurrency } from '@/lib/utils'
 interface Invoice {
   id: string
   invoiceNumber: string
-  invoiceDate: Date
-  total: string
+  invoiceDate: Date | string
+  total: string | number
   status: string
-  customerName?: string
+  customerName?: string | null
 }
 
 interface InvoiceListProps {

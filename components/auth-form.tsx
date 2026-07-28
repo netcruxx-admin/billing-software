@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
 
-export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
+export function AuthForm({ mode, error }: { mode: 'sign-in' | 'sign-up'; error?: string }) {
   const isSignUp = mode === 'sign-up'
   const action = isSignUp ? signUp : signIn
 
@@ -20,10 +20,16 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             {isSignUp
-              ? 'This is a demo — any name, email and password will work.'
+              ? 'Create an account to start billing customers.'
               : 'Sign in to your account to continue'}
           </p>
         </div>
+
+        {error && (
+          <div className="mb-4 p-3 bg-destructive/10 border border-destructive rounded-lg">
+            <p className="text-sm text-destructive">{error}</p>
+          </div>
+        )}
 
         <form action={action} className="flex flex-col gap-4">
           {isSignUp && (

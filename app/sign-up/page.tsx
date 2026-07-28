@@ -1,9 +1,14 @@
 import { redirect } from 'next/navigation'
-import { getDemoSession } from '@/lib/demo-auth'
+import { getSession } from '@/lib/session'
 import { AuthForm } from '@/components/auth-form'
 
-export default async function SignUpPage() {
-  const session = await getDemoSession()
+type SignUpPageProps = {
+  searchParams: Promise<{ error?: string }>
+}
+
+export default async function SignUpPage({ searchParams }: SignUpPageProps) {
+  const session = await getSession()
   if (session?.user) redirect('/')
-  return <AuthForm mode="sign-up" />
+  const { error } = await searchParams
+  return <AuthForm mode="sign-up" error={error} />
 }

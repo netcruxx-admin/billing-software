@@ -1,46 +1,82 @@
 'use server'
 
-import { demoDb } from '@/lib/demo-db'
 import { revalidatePath } from 'next/cache'
+import { apiFetch } from '@/lib/api'
+
+export interface ProductVariant {
+  id: string
+  productId: string
+  packSize?: string | null
+  sku?: string | null
+  price: number
+  costPrice?: number | null
+  mrp?: number | null
+  quantity: number
+  isLoose: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Product {
+  id: string
+  businessId: string
+  categoryId?: string | null
+  name: string
+  description?: string | null
+  unit: string
+  gstRate: number
+  hsnCode?: string | null
+  createdAt: string
+  updatedAt: string
+  variants: ProductVariant[]
+}
+
+export interface ProductVariantInput {
+  id?: string
+  packSize?: string
+  sku?: string
+  price: number
+  costPrice?: number
+  mrp?: number
+  quantity?: number
+  isLoose?: boolean
+}
 
 export async function getProducts(businessId: string) {
-  return demoDb.getProducts(businessId)
+  return apiFetch<Product[]>(`/api/businesses/${businessId}/products`)
 }
 
 export async function getProduct(productId: string, businessId: string) {
-  const prod = await demoDb.getProduct(businessId, productId)
-  if (!prod) throw new Error('Product not found')
-  return prod
+  return apiFetch<Product>(`/api/businesses/${businessId}/products/${productId}`)
 }
 
 export async function createProduct(businessId: string, data: {
   name: string
   description?: string
-  sku?: string
-  price: number
-  costPrice?: number
-  quantity?: number
-  category?: string
+  categoryId: string
+  unit?: string
+  gstRate?: number
+  hsnCode?: string
+  variants: ProductVariantInput[]
 }) {
-  const product = await demoDb.createProduct(businessId, {
-    ...data,
-    quantity: data.quantity || 0,
+  const product = await apiFetch<Product>(`/api/businesses/${businessId}/products`, {
+    method: 'POST',
+    body: JSON.stringify(data),
   })
   revalidatePath(`/dashboard/businesses/${businessId}`)
   return product.id
 }
 
 export async function updateProduct(productId: string, businessId: string, data: any) {
-  const prod = await demoDb.getProduct(businessId, productId)
-  if (!prod) throw new Error('Product not found')
-
-  Object.assign(prod, data, { updatedAt: new Date() })
+  await apiFetch<Product>(`/api/businesses/${businessId}/products/${productId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
   revalidatePath(`/dashboard/businesses/${businessId}`)
   revalidatePath(`/dashboard/businesses/${businessId}/inventory/${productId}`)
 }
 
 export async function deleteProduct(productId: string, businessId: string) {
-  const deleted = await demoDb.deleteProduct(businessId, productId)
-  if (!deleted) throw new Error('Product not found')
+  await apiFetch<void>(`/api/businesses/${businessId}/products/${productId}`, { method: 'DELETE' })
   revalidatePath(`/dashboard/businesses/${businessId}`)
 }

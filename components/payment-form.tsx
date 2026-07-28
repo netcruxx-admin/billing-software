@@ -5,20 +5,13 @@ import { useRouter } from 'next/navigation'
 import { recordPayment } from '@/app/actions/payments'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { formatCurrency } from '@/lib/utils'
+import { PAYMENT_METHODS, formatCurrency } from '@/lib/utils'
 
 interface PaymentFormProps {
   invoiceId: string
   businessId: string
   amount: number
 }
-
-const PAYMENT_METHODS = [
-  { value: 'cash', label: 'Cash' },
-  { value: 'card', label: 'Card' },
-  { value: 'bank_transfer', label: 'Bank Transfer' },
-  { value: 'other', label: 'Other' },
-]
 
 export function PaymentForm({ invoiceId, businessId, amount }: PaymentFormProps) {
   const [method, setMethod] = useState('cash')
@@ -58,7 +51,9 @@ export function PaymentForm({ invoiceId, businessId, amount }: PaymentFormProps)
         <label className="block text-sm font-medium text-foreground mb-2">Payment Method</label>
         <Select value={method} onValueChange={(value) => setMethod(value ?? 'cash')}>
           <SelectTrigger className="w-full">
-            <SelectValue />
+            <SelectValue>
+              {(value: string) => PAYMENT_METHODS.find(m => m.value === value)?.label ?? 'Select a method'}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {PAYMENT_METHODS.map((m) => (

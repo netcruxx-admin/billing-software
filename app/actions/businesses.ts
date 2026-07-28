@@ -1,28 +1,32 @@
 'use server'
 
-import { demoDb } from '@/lib/demo-db'
 import { revalidatePath } from 'next/cache'
-import { demoUserId } from '@/lib/demo-auth'
+import { apiFetch } from '@/lib/api'
 
-/**
- * Get the current user id from demo session.
- * Every server action that touches user data uses this.
- */
-async function getUserId() {
-  return demoUserId
+export interface Business {
+  id: string
+  userId: string
+  name: string
+  type: string
+  address?: string | null
+  phone?: string | null
+  email?: string | null
+  taxId?: string | null
+  logo?: string | null
+  fssaiNo?: string | null
+  cstDate?: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 // Get all businesses for the current user
 export async function getBusinesses() {
-  const userId = await getUserId()
-  return demoDb.getBusinesses(userId)
+  return apiFetch<Business[]>('/api/businesses')
 }
 
 // Get a single business by ID (with auth check)
 export async function getBusiness(businessId: string) {
-  const business = await demoDb.getBusiness(businessId)
-  if (!business) throw new Error('Business not found')
-  return business
+  return apiFetch<Business>(`/api/businesses/${businessId}`)
 }
 
 // Create a new business
@@ -33,35 +37,30 @@ export async function createBusiness(data: {
   phone?: string
   email?: string
   taxId?: string
+  fssaiNo?: string
+  cstDate?: string
 }) {
-  const userId = await getUserId()
-  const result = await demoDb.createBusiness({
-    userId,
-    name: data.name,
-    type: data.type,
-    address: data.address,
-    phone: data.phone,
-    email: data.email,
-    taxId: data.taxId,
+  const business = await apiFetch<Business>('/api/businesses', {
+    method: 'POST',
+    body: JSON.stringify(data),
   })
 
   revalidatePath('/')
-  return result.id
+  return business.id
 }
 
 // Update a business
 export async function updateBusiness(businessId: string, data: any) {
-  const biz = await demoDb.getBusiness(businessId)
-  if (!biz) throw new Error('Business not found')
-
-  Object.assign(biz, data, { updatedAt: new Date() })
+  await apiFetch<Business>(`/api/businesses/${businessId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
   revalidatePath('/')
   revalidatePath(`/dashboard/businesses/${businessId}`)
 }
 
 // Delete a business
 export async function deleteBusiness(businessId: string) {
-  const deleted = await demoDb.deleteBusiness(businessId)
-  if (!deleted) throw new Error('Business not found')
+  await apiFetch<void>(`/api/businesses/${businessId}`, { method: 'DELETE' })
   revalidatePath('/')
 }

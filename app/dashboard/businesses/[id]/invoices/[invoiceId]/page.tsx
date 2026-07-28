@@ -2,9 +2,14 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getInvoiceById, getInvoiceItems } from '@/app/actions/invoices'
 import { getPaymentHistory } from '@/app/actions/payments'
+import { getBusiness } from '@/app/actions/businesses'
+import { getCustomer } from '@/app/actions/customers'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { PaymentForm } from '@/components/payment-form'
-import { formatCurrency } from '@/lib/utils'
+import { InvoicePrintView } from '@/components/invoice-print-view'
+import { InvoicePrintViewRetail } from '@/components/invoice-print-view-retail'
+import { formatCurrency, groupByTaxRateIncludingZero, invoiceLayout, paymentMethodLabel, splitGst } from '@/lib/utils'
 
 type InvoiceDetailPageProps = {
   params: Promise<{ id: string; invoiceId: string }>
@@ -14,11 +19,21 @@ export default async function InvoiceDetailPage({ params }: InvoiceDetailPagePro
   const { id, invoiceId } = await params
 
   try {
-    const [invoiceData, items, payments] = await Promise.all([
+    const [invoiceData, items, payments, business] = await Promise.all([
       getInvoiceById(invoiceId, id),
-      getInvoiceItems(invoiceId),
+      getInvoiceItems(invoiceId, id),
       getPaymentHistory(invoiceId, id),
+      getBusiness(id),
     ])
+
+    let customer = null
+    if (invoiceData.customerId) {
+      try {
+        customer = await getCustomer(invoiceData.customerId, id)
+      } catch {
+        customer = null
+      }
+    }
 
     const statusColor =
       invoiceData.status === 'paid'
@@ -29,15 +44,17 @@ export default async function InvoiceDetailPage({ params }: InvoiceDetailPagePro
 
     const totalAmount = parseFloat(invoiceData.total as any)
     const paidAmount = parseFloat(invoiceData.paidAmount as any) || 0
-    const remainingAmount = totalAmount - paidAmount
     const subtotalAmount = parseFloat(invoiceData.subtotal as any) || 0
-    const taxAmount = parseFloat(invoiceData.tax as any) || 0
-    const taxRate =
-      invoiceData.taxRate != null
-        ? Number(invoiceData.taxRate)
-        : subtotalAmount > 0
-          ? Math.round((taxAmount / subtotalAmount) * 10000) / 100
-          : 0
+    const layout = invoiceLayout(business.type)
+    const roundedTotal = Math.round(totalAmount)
+    const roundOff = Math.round((roundedTotal - totalAmount) * 100) / 100
+    const retailTaxBuckets = layout === 'retail' ? groupByTaxRateIncludingZero(items) : []
+    const retailTotalTax = retailTaxBuckets.reduce((sum, b) => sum + b.taxAmount, 0)
+    // The invoice itself displays the round-off-adjusted total as the amount
+    // owed for retail businesses — payment tracking has to agree with that
+    // number, not the raw pre-round-off backend total.
+    const displayTotal = layout === 'retail' ? roundedTotal : totalAmount
+    const remainingAmount = displayTotal - paidAmount
 
     return (
       <div className="p-8">
@@ -51,52 +68,26 @@ export default async function InvoiceDetailPage({ params }: InvoiceDetailPagePro
                   Invoice {invoiceData.invoiceNumber}
                 </h1>
               </div>
-              <Badge className={statusColor}>{invoiceData.status.toUpperCase()}</Badge>
+              <div className="flex items-center gap-3">
+                <Badge className={statusColor}>{invoiceData.status.toUpperCase()}</Badge>
+                <Link href={`/dashboard/businesses/${id}/invoices/${invoiceId}/print`}>
+                  <Button variant="outline">Print / Download PDF</Button>
+                </Link>
+              </div>
+            </div>
+
+            {/* Bill — same layout as Print / Download PDF */}
+            <div className="mb-8">
+              {layout === 'retail' ? (
+                <InvoicePrintViewRetail business={business} customer={customer} invoice={invoiceData} items={items} />
+              ) : (
+                <InvoicePrintView business={business} customer={customer} invoice={invoiceData} items={items} />
+              )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* Invoice Details */}
+              {/* Payment History */}
               <div className="lg:col-span-2 space-y-8">
-                {/* Invoice Info */}
-                <div className="bg-card border border-border rounded-lg p-6">
-                  <h2 className="text-lg font-semibold text-foreground mb-4">Invoice Details</h2>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Invoice Date</p>
-                      <p className="font-medium text-foreground">
-                        {new Date(invoiceData.invoiceDate).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Due Date</p>
-                      <p className="font-medium text-foreground">
-                        {invoiceData.dueDate ? new Date(invoiceData.dueDate).toLocaleDateString() : 'N/A'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Line Items */}
-                <div className="bg-card border border-border rounded-lg p-6">
-                  <h2 className="text-lg font-semibold text-foreground mb-4">Items</h2>
-                  <div className="space-y-2">
-                    {items.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between p-3 border border-border rounded">
-                        <div>
-                          <p className="font-medium text-foreground">{item.description}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {item.quantity} × {formatCurrency(item.unitPrice)}
-                          </p>
-                        </div>
-                        <p className="font-semibold text-foreground">
-                          {formatCurrency(item.amount)}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Payment History */}
                 {payments.length > 0 && (
                   <div className="bg-card border border-border rounded-lg p-6">
                     <h2 className="text-lg font-semibold text-foreground mb-4">Payment History</h2>
@@ -104,7 +95,7 @@ export default async function InvoiceDetailPage({ params }: InvoiceDetailPagePro
                       {payments.map((p) => (
                         <div key={p.id} className="flex items-center justify-between p-3 border border-border rounded">
                           <div>
-                            <p className="font-medium text-foreground capitalize">{p.method}</p>
+                            <p className="font-medium text-foreground">{paymentMethodLabel(p.method)}</p>
                             <p className="text-sm text-muted-foreground">
                               {new Date(p.createdAt).toLocaleDateString()}
                             </p>
@@ -130,19 +121,53 @@ export default async function InvoiceDetailPage({ params }: InvoiceDetailPagePro
                         {formatCurrency(subtotalAmount)}
                       </span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">GST ({taxRate}%)</span>
-                      <span className="font-medium text-foreground">
-                        {formatCurrency(taxAmount)}
+                    {layout === 'retail' ? (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">SGST</span>
+                          <span className="font-medium text-foreground">
+                            {formatCurrency(retailTotalTax / 2)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">CGST</span>
+                          <span className="font-medium text-foreground">
+                            {formatCurrency(retailTotalTax / 2)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Round Off</span>
+                          <span className="font-medium text-foreground">
+                            {formatCurrency(roundOff)}
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      invoiceData.taxBreakdown.map((b) => {
+                        const { sgstRate, cgstRate, sgstAmount, cgstAmount } = splitGst(b.taxAmount, b.rate)
+                        return (
+                          <div key={b.rate} className="space-y-3">
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">SGST {sgstRate}%</span>
+                              <span className="font-medium text-foreground">
+                                {formatCurrency(sgstAmount)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">CGST {cgstRate}%</span>
+                              <span className="font-medium text-foreground">
+                                {formatCurrency(cgstAmount)}
+                              </span>
+                            </div>
+                          </div>
+                        )
+                      })
+                    )}
+                    <div className="border-t border-border pt-3 flex justify-between">
+                      <span className="font-semibold text-foreground">{layout === 'retail' ? 'Net Amount' : 'Total'}</span>
+                      <span className="font-semibold text-foreground text-lg">
+                        {formatCurrency(displayTotal)}
                       </span>
-                    </div>
-                    <div className="border-t border-border pt-3">
-                      <div className="flex justify-between">
-                        <span className="font-semibold text-foreground">Total</span>
-                        <span className="font-semibold text-foreground text-lg">
-                          {formatCurrency(totalAmount)}
-                        </span>
-                      </div>
                     </div>
                     <div className="border-t border-border pt-3">
                       <div className="flex justify-between">

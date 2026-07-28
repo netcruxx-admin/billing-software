@@ -1,20 +1,19 @@
 import { redirect } from 'next/navigation'
-import { getDemoSession } from '@/lib/demo-auth'
+import { getSession } from '@/lib/session'
 import { getBusinesses } from './actions/businesses'
 import { DashboardHeader } from '@/components/dashboard-header'
 import { DashboardSidebar } from '@/components/dashboard-sidebar'
 import { BusinessCard } from '@/components/business-card'
 
 export default async function Home() {
-  const session = await getDemoSession()
+  const session = await getSession()
   if (!session?.user) redirect('/sign-in')
 
   let businesses: any[] = []
   try {
     businesses = await getBusinesses()
   } catch (error) {
-    console.log('Database connection error:', error)
-    // Show demo mode - no businesses but app is functional
+    console.error('Failed to load businesses:', error)
   }
 
   return (
