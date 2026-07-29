@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Float, ForeignKey, String, Text, DateTime
+from sqlalchemy import JSON, Boolean, Float, ForeignKey, Integer, String, Text, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -53,6 +53,7 @@ class Business(Base):
     payments: Mapped[list["Payment"]] = relationship(back_populates="business", cascade="all, delete-orphan")
     suppliers: Mapped[list["Supplier"]] = relationship(back_populates="business", cascade="all, delete-orphan")
     purchases: Mapped[list["Purchase"]] = relationship(back_populates="business", cascade="all, delete-orphan")
+    invoice_columns: Mapped[list["InvoiceColumn"]] = relationship(back_populates="business", cascade="all, delete-orphan")
 
 
 class Category(Base):
@@ -199,9 +200,33 @@ class InvoiceItem(Base):
     # complimentary gift (e.g. "Free sample spoon"). Presence of a non-blank
     # note is what marks the line as a gift — see create_invoice.
     gift_note: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Values for this business's custom invoice columns (see InvoiceColumn),
+    # keyed by InvoiceColumn.key — e.g. {"batch_no": "B-2201"}. Stored as a
+    # snapshot on the line item itself (not looked up live from
+    # InvoiceColumn) so a saved invoice keeps showing its data even after a
+    # column is later renamed or deleted.
+    custom_fields: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     invoice: Mapped["Invoice"] = relationship(back_populates="items")
+
+
+class InvoiceColumn(Base):
+    __tablename__ = "invoice_columns"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=gen_id)
+    business_id: Mapped[str] = mapped_column(String, ForeignKey("businesses.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Stable machine key derived from the label at creation time (e.g.
+    # "batch_no") — this is what InvoiceItem.custom_fields is keyed by, so it
+    # stays fixed even if the label is edited later.
+    key: Mapped[str] = mapped_column(String, nullable=False)
+    label: Mapped[str] = mapped_column(String, nullable=False)
+    field_type: Mapped[str] = mapped_column(String, nullable=False, default="text")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    business: Mapped["Business"] = relationship(back_populates="invoice_columns")
 
 
 class Supplier(Base):

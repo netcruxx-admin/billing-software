@@ -5,7 +5,7 @@ from app import models
 from app.config import settings
 from app.database import Base, engine
 from app.migrate import run_migrations
-from app.routers import analytics, auth, businesses, categories, customers, invoices, payments, products, purchases, suppliers
+from app.routers import analytics, auth, businesses, categories, customers, invoice_columns, invoices, payments, products, purchases, suppliers
 
 Base.metadata.create_all(bind=engine)
 run_migrations(engine)
@@ -26,6 +26,7 @@ app.include_router(categories.router)
 app.include_router(products.router)
 app.include_router(customers.router)
 app.include_router(invoices.router)
+app.include_router(invoice_columns.router)
 app.include_router(payments.router)
 app.include_router(suppliers.router)
 app.include_router(purchases.router)

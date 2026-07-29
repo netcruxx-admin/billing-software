@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { InvoicePdfDocument } from '@/components/invoice-pdf-document'
 import { InvoicePdfDocumentRetail } from '@/components/invoice-pdf-document-retail'
-import { cn, invoiceLayout } from '@/lib/utils'
+import { cn, invoiceLayout, type CustomFieldColumn } from '@/lib/utils'
 
 const PDFDownloadLink = dynamic(
   () => import('@react-pdf/renderer').then((mod) => mod.PDFDownloadLink),
@@ -24,13 +24,14 @@ interface InvoicePrintActionsProps {
   customer: React.ComponentProps<typeof InvoicePdfDocument>['customer'] & React.ComponentProps<typeof InvoicePdfDocumentRetail>['customer']
   invoice: React.ComponentProps<typeof InvoicePdfDocument>['invoice'] & React.ComponentProps<typeof InvoicePdfDocumentRetail>['invoice']
   items: React.ComponentProps<typeof InvoicePdfDocument>['items'] & React.ComponentProps<typeof InvoicePdfDocumentRetail>['items']
+  customColumns?: CustomFieldColumn[]
 }
 
-export function InvoicePrintActions({ invoiceUrl, fileName, business, customer, invoice, items }: InvoicePrintActionsProps) {
+export function InvoicePrintActions({ invoiceUrl, fileName, business, customer, invoice, items, customColumns = [] }: InvoicePrintActionsProps) {
   const layout = invoiceLayout(business.type)
   const document = layout === 'retail'
-    ? <InvoicePdfDocumentRetail business={business} customer={customer} invoice={invoice} items={items} />
-    : <InvoicePdfDocument business={business} customer={customer} invoice={invoice} items={items} />
+    ? <InvoicePdfDocumentRetail business={business} customer={customer} invoice={invoice} items={items} customColumns={customColumns} />
+    : <InvoicePdfDocument business={business} customer={customer} invoice={invoice} items={items} customColumns={customColumns} />
 
   return (
     <div className="print:hidden sticky top-0 z-10 bg-background border-b border-border">

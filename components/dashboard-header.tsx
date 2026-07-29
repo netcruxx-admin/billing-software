@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { Receipt } from 'lucide-react'
 import { signOut } from '@/app/actions/auth'
 import {
   DropdownMenu,
@@ -21,11 +22,11 @@ export function DashboardHeader({ user }: DashboardHeaderProps) {
   }
 
   return (
-    <header className="border-b border-border bg-card">
-      <div className="px-8 py-4 flex items-center justify-between">
+    <header className="border-b border-border bg-card shrink-0">
+      <div className="px-4 md:px-8 py-4 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-            <span className="text-sm font-bold text-primary">B</span>
+            <Receipt className="size-5 text-primary" />
           </div>
           <div>
             <h1 className="font-bold text-foreground">BillingPro</h1>

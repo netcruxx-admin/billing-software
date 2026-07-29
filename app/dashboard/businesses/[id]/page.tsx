@@ -72,7 +72,7 @@ export default async function BusinessDetailsPage({ params, searchParams }: Busi
             </div>
           </div>
 
-          <Tabs defaultValue={defaultTab} className="w-full">
+          <Tabs key={defaultTab} defaultValue={defaultTab} className="w-full">
             <TabsList className="grid w-full grid-cols-6">
               <TabsTrigger value="invoices">Invoices</TabsTrigger>
               <TabsTrigger value="inventory">Inventory</TabsTrigger>

@@ -2,10 +2,11 @@ import { redirect } from 'next/navigation'
 import { getBusiness } from '@/app/actions/businesses'
 import { getInvoiceById, getInvoiceItems } from '@/app/actions/invoices'
 import { getCustomer } from '@/app/actions/customers'
+import { getInvoiceColumns } from '@/app/actions/invoice-columns'
 import { InvoicePrintView } from '@/components/invoice-print-view'
 import { InvoicePrintViewRetail } from '@/components/invoice-print-view-retail'
 import { InvoicePrintActions } from '@/components/invoice-print-actions'
-import { invoiceLayout } from '@/lib/utils'
+import { invoiceLayout, resolveCustomFieldColumns } from '@/lib/utils'
 
 type InvoicePrintPageProps = {
   params: Promise<{ id: string; invoiceId: string }>
@@ -20,6 +21,10 @@ export default async function InvoicePrintPage({ params }: InvoicePrintPageProps
       getInvoiceById(invoiceId, id),
       getInvoiceItems(invoiceId, id),
     ])
+    // Custom invoice columns are an optional enhancement — don't let a
+    // failure here (e.g. backend not yet migrated) break printing.
+    const invoiceColumns = await getInvoiceColumns(id).catch(() => [])
+    const customColumns = resolveCustomFieldColumns(items, invoiceColumns)
 
     let customer = null
     if (invoice.customerId) {
@@ -39,12 +44,13 @@ export default async function InvoicePrintPage({ params }: InvoicePrintPageProps
           customer={customer}
           invoice={invoice}
           items={items}
+          customColumns={customColumns}
         />
         <div className="py-10 print:py-0">
           {invoiceLayout(business.type) === 'retail' ? (
-            <InvoicePrintViewRetail business={business} customer={customer} invoice={invoice} items={items} />
+            <InvoicePrintViewRetail business={business} customer={customer} invoice={invoice} items={items} customColumns={customColumns} />
           ) : (
-            <InvoicePrintView business={business} customer={customer} invoice={invoice} items={items} />
+            <InvoicePrintView business={business} customer={customer} invoice={invoice} items={items} customColumns={customColumns} />
           )}
         </div>
       </div>

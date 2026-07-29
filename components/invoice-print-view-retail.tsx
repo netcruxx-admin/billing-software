@@ -1,4 +1,13 @@
-import { formatCurrency, formatDate, groupByTaxRateIncludingZero, numberToWords, paymentModeLabel, retailQtyLabel, splitGst } from '@/lib/utils'
+import {
+  formatCurrency,
+  formatDate,
+  groupByTaxRateIncludingZero,
+  numberToWords,
+  paymentModeLabel,
+  retailQtyLabel,
+  splitGst,
+  type CustomFieldColumn,
+} from '@/lib/utils'
 
 interface InvoicePrintViewRetailProps {
   business: {
@@ -45,13 +54,15 @@ interface InvoicePrintViewRetailProps {
     cdRate?: number | null
     giftNote?: string | null
     discountAmount?: string | number | null
+    customFields?: Record<string, string> | null
   }>
+  customColumns?: CustomFieldColumn[]
 }
 
 const th = 'border border-neutral-800 py-1.5 px-2 font-semibold bg-neutral-100'
 const td = 'border border-neutral-400 py-1 px-2'
 
-export function InvoicePrintViewRetail({ business, customer, invoice, items }: InvoicePrintViewRetailProps) {
+export function InvoicePrintViewRetail({ business, customer, invoice, items, customColumns = [] }: InvoicePrintViewRetailProps) {
   const subtotal = Number(invoice.subtotal) || 0
   const total = Number(invoice.total) || 0
   const roundedTotal = Math.round(total)
@@ -127,6 +138,9 @@ export function InvoicePrintViewRetail({ business, customer, invoice, items }: I
             <th className={th}>Gift</th>
             <th className={`${th} text-right`}>Tax%</th>
             <th className={`${th} text-right`}>Gross Amt</th>
+            {customColumns.map((col) => (
+              <th key={col.key} className={th}>{col.label}</th>
+            ))}
           </tr>
         </thead>
         <tbody>
@@ -148,6 +162,9 @@ export function InvoicePrintViewRetail({ business, customer, invoice, items }: I
                 <td className={td}>{item.giftNote || '—'}</td>
                 <td className={`${td} text-right`}>{(Number(item.taxRate) || 0).toFixed(2)}</td>
                 <td className={`${td} text-right`}>{formatCurrency(grossAmt)}</td>
+                {customColumns.map((col) => (
+                  <td key={col.key} className={td}>{item.customFields?.[col.key] || '—'}</td>
+                ))}
               </tr>
             )
           })}

@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import { Briefcase, Package, UtensilsCrossed, type LucideIcon } from 'lucide-react'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -77,11 +78,11 @@ export function invoiceLayout(businessType?: string | null): 'restaurant' | 'ret
 }
 
 export interface DashboardModuleLabels {
-  inventory: { label: string; icon: string }
+  inventory: { label: string; icon: LucideIcon }
 }
 
 const DEFAULT_MODULE_LABELS: DashboardModuleLabels = {
-  inventory: { label: 'Inventory', icon: '📦' },
+  inventory: { label: 'Inventory', icon: Package },
 }
 
 // The "Inventory" tab is the same underlying product catalog for every
@@ -91,9 +92,9 @@ const DEFAULT_MODULE_LABELS: DashboardModuleLabels = {
 // as more type-specific modules get built; only add an override here once a
 // type's terminology actually differs, not speculatively.
 const MODULE_LABELS_BY_TYPE: Record<string, DashboardModuleLabels> = {
-  restaurant: { inventory: { label: 'Menu', icon: '🍽️' } },
-  cafe: { inventory: { label: 'Menu', icon: '🍽️' } },
-  office: { inventory: { label: 'Services', icon: '🧰' } },
+  restaurant: { inventory: { label: 'Menu', icon: UtensilsCrossed } },
+  cafe: { inventory: { label: 'Menu', icon: UtensilsCrossed } },
+  office: { inventory: { label: 'Services', icon: Briefcase } },
 }
 
 export function dashboardModuleLabels(businessType?: string | null): DashboardModuleLabels {
@@ -246,6 +247,60 @@ export function groupByTaxRateIncludingZero(
       taxableAmount: Math.round(v.taxableAmount * 100) / 100,
       taxAmount: Math.round(v.taxAmount * 100) / 100,
     }))
+}
+
+// Tailwind's scale (with dark: variants) rather than the app's grayscale
+// theme tokens, since a status needs its own hue to be scannable — the
+// pairing is deliberately soft-tint-background + saturated-text (not the
+// reverse) to keep contrast readable in both themes.
+export function invoiceStatusBadgeClass(status: string): string {
+  switch (status) {
+    case 'paid':
+      return 'bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-400'
+    case 'partial':
+      return 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-400'
+    case 'overdue':
+      return 'bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-400'
+    case 'draft':
+      return 'bg-secondary text-secondary-foreground'
+    default:
+      return 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-400'
+  }
+}
+
+export interface CustomFieldColumn {
+  key: string
+  label: string
+}
+
+// Which of a business's custom invoice columns actually have data on this
+// particular invoice — printed views only show columns worth showing, not
+// every column ever configured. Current business columns come first (in
+// their configured order); any key present in the saved data but no longer
+// configured (renamed/deleted since) is appended with a humanized fallback
+// label, so historical invoices don't silently lose that data off the page.
+export function resolveCustomFieldColumns(
+  items: Array<{ customFields?: Record<string, string> | null }>,
+  invoiceColumns: Array<{ key: string; label: string }>
+): CustomFieldColumn[] {
+  const labelByKey = new Map(invoiceColumns.map((c) => [c.key, c.label]))
+  const seen = new Set<string>()
+  const columns: CustomFieldColumn[] = []
+
+  for (const col of invoiceColumns) {
+    if (items.some((item) => item.customFields?.[col.key])) {
+      columns.push({ key: col.key, label: col.label })
+      seen.add(col.key)
+    }
+  }
+  for (const item of items) {
+    for (const [key, value] of Object.entries(item.customFields ?? {})) {
+      if (seen.has(key) || !value) continue
+      seen.add(key)
+      columns.push({ key, label: labelByKey.get(key) ?? key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) })
+    }
+  }
+  return columns
 }
 
 export function formatDate(date: Date | string) {

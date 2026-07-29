@@ -1,5 +1,5 @@
 import { Fragment } from 'react'
-import { formatCurrency, formatDate, invoiceReferenceLabel, splitGst, unitLabel } from '@/lib/utils'
+import { formatCurrency, formatDate, invoiceReferenceLabel, splitGst, unitLabel, type CustomFieldColumn } from '@/lib/utils'
 
 interface InvoicePrintViewProps {
   business: {
@@ -36,10 +36,12 @@ interface InvoicePrintViewProps {
     unit?: string | null
     unitPrice: string | number
     amount: string | number
+    customFields?: Record<string, string> | null
   }>
+  customColumns?: CustomFieldColumn[]
 }
 
-export function InvoicePrintView({ business, customer, invoice, items }: InvoicePrintViewProps) {
+export function InvoicePrintView({ business, customer, invoice, items, customColumns = [] }: InvoicePrintViewProps) {
   const subtotal = Number(invoice.subtotal) || 0
   const total = Number(invoice.total) || 0
   const paidAmount = Number(invoice.paidAmount) || 0
@@ -125,6 +127,9 @@ export function InvoicePrintView({ business, customer, invoice, items }: Invoice
             <th className="pb-2 font-semibold text-right">Quantity</th>
             <th className="pb-2 font-semibold text-right">Price</th>
             <th className="pb-2 font-semibold text-right">Amount</th>
+            {customColumns.map((col) => (
+              <th key={col.key} className="pb-2 font-semibold">{col.label}</th>
+            ))}
           </tr>
         </thead>
         <tbody>
@@ -134,6 +139,9 @@ export function InvoicePrintView({ business, customer, invoice, items }: Invoice
               <td className="py-3 text-right">{item.quantity != null ? `${item.quantity} ${unitLabel(item.unit)}` : '—'}</td>
               <td className="py-3 text-right">{formatCurrency(item.unitPrice)}</td>
               <td className="py-3 text-right">{formatCurrency(item.amount)}</td>
+              {customColumns.map((col) => (
+                <td key={col.key} className="py-3">{item.customFields?.[col.key] || '—'}</td>
+              ))}
             </tr>
           ))}
         </tbody>

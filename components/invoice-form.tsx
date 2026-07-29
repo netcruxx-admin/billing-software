@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createInvoice } from '@/app/actions/invoices'
 import { createCustomer } from '@/app/actions/customers'
+import type { InvoiceColumn } from '@/app/actions/invoice-columns'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -71,6 +72,7 @@ interface InvoiceFormProps {
   business?: BusinessInfo
   customers?: CustomerInfo[]
   products?: ProductInfo[]
+  invoiceColumns?: InvoiceColumn[]
 }
 
 interface InvoiceLineItem {
@@ -90,9 +92,77 @@ interface InvoiceLineItem {
   isLoose?: boolean
   cdRate?: number
   giftNote?: string
+  // Values for this business's custom invoice columns, keyed by
+  // InvoiceColumn.key.
+  customFields?: Record<string, string>
 }
 
-const DEFAULT_ITEM: InvoiceLineItem = { description: '', quantity: '', unitPrice: 0, taxRate: 18, cdRate: 0, isLoose: false }
+const DEFAULT_ITEM: InvoiceLineItem = {
+  description: '',
+  quantity: '',
+  unitPrice: 0,
+  taxRate: 18,
+  cdRate: 0,
+  isLoose: false,
+  customFields: {},
+}
+
+type ColumnKey = 'index' | 'item' | 'hsn' | 'soldBy' | 'mrp' | 'qty' | 'rate' | 'cd' | 'gift' | 'tax' | 'amount' | 'actions'
+
+// Ghost/inline style for inputs & selects embedded in the item table —
+// a full bordered pill per cell reads as cluttered in a dense grid, so
+// these stay blended into the row and only reveal a border on
+// hover/focus, matching the spreadsheet-cell convention (Sheets/Airtable).
+const CELL_FIELD_CLASS =
+  'rounded-md border-transparent bg-transparent px-2 shadow-none hover:border-border focus-visible:border-ring focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-ring/30'
+
+const DEFAULT_COL_WIDTHS: Record<ColumnKey, number> = {
+  index: 40,
+  item: 280,
+  hsn: 100,
+  soldBy: 110,
+  mrp: 100,
+  qty: 100,
+  rate: 110,
+  cd: 70,
+  gift: 160,
+  tax: 100,
+  amount: 120,
+  actions: 60,
+}
+
+const MIN_COL_WIDTHS: Record<ColumnKey, number> = {
+  index: 36,
+  item: 160,
+  hsn: 70,
+  soldBy: 90,
+  mrp: 70,
+  qty: 70,
+  rate: 80,
+  cd: 56,
+  gift: 100,
+  tax: 80,
+  amount: 90,
+  actions: 48,
+}
+
+// Custom columns (business-defined, see Invoice Columns settings) aren't in
+// the maps above since their keys are dynamic — they fall back to these.
+const DEFAULT_CUSTOM_COL_WIDTH = 130
+const MIN_CUSTOM_COL_WIDTH = 90
+
+// A thin drag handle on a header cell's right edge — the invoice-item
+// table uses table-layout: fixed (via <colgroup>) so columns hold a
+// precise width instead of the browser guessing from content, and this
+// is how the user adjusts that width per column.
+function ColumnResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => void }) {
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize touch-none select-none hover:bg-primary/50 active:bg-primary"
+    />
+  )
+}
 
 // A blank quantity means a flat-fee line item (e.g. a service charge) —
 // treat it as a single unit for the on-screen total preview, matching the
@@ -107,10 +177,10 @@ const lineAmount = (item: InvoiceLineItem) => {
   return gross - gross * (discountRate / 100)
 }
 
-export function InvoiceForm({ businessId, business, customers = [], products = [] }: InvoiceFormProps) {
+export function InvoiceForm({ businessId, business, customers = [], products = [], invoiceColumns = [] }: InvoiceFormProps) {
   const router = useRouter()
   const isOffice = business?.type === 'office'
-  const buildItem = (): InvoiceLineItem => ({ ...DEFAULT_ITEM, unit: isOffice ? 'month' : undefined })
+  const buildItem = (): InvoiceLineItem => ({ ...DEFAULT_ITEM, unit: isOffice ? 'month' : undefined, customFields: {} })
   const [loading, setLoading] = useState(false)
   const [items, setItems] = useState<InvoiceLineItem[]>([buildItem()])
   const [formData, setFormData] = useState({
@@ -124,6 +194,51 @@ export function InvoiceForm({ businessId, business, customers = [], products = [
   })
   const referenceLabel = invoiceReferenceLabel(business?.type)
   const layout = invoiceLayout(business?.type)
+  // Custom (business-defined) columns always render after the fixed ones,
+  // right before the row-delete action column.
+  const visibleColumns: string[] = [
+    'index',
+    'item',
+    ...(layout === 'retail' ? ['hsn', 'soldBy', 'mrp'] : []),
+    'qty',
+    'rate',
+    ...(layout === 'retail' ? ['cd', 'gift'] : []),
+    'tax',
+    'amount',
+    ...invoiceColumns.map((c) => c.key),
+    'actions',
+  ]
+  const [colWidths, setColWidths] = useState<Record<string, number>>(DEFAULT_COL_WIDTHS)
+  const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null)
+
+  const colWidth = (key: string) => colWidths[key] ?? DEFAULT_CUSTOM_COL_WIDTH
+  const colMinWidth = (key: string) => (MIN_COL_WIDTHS as Record<string, number>)[key] ?? MIN_CUSTOM_COL_WIDTH
+
+  const handleResizeMove = (e: MouseEvent) => {
+    const r = resizingRef.current
+    if (!r) return
+    const next = Math.max(colMinWidth(r.key), r.startWidth + (e.clientX - r.startX))
+    setColWidths((prev) => ({ ...prev, [r.key]: next }))
+  }
+
+  const handleResizeEnd = () => {
+    resizingRef.current = null
+    window.removeEventListener('mousemove', handleResizeMove)
+    window.removeEventListener('mouseup', handleResizeEnd)
+  }
+
+  const startResize = (key: string) => (e: React.MouseEvent) => {
+    e.preventDefault()
+    resizingRef.current = { key, startX: e.clientX, startWidth: colWidth(key) }
+    window.addEventListener('mousemove', handleResizeMove)
+    window.addEventListener('mouseup', handleResizeEnd)
+  }
+
+  const handleCustomFieldChange = (index: number, key: string, value: string) => {
+    const newItems = [...items]
+    newItems[index] = { ...newItems[index], customFields: { ...newItems[index].customFields, [key]: value } }
+    setItems(newItems)
+  }
   // One sellable entry per (product, pack size) — price and stock are
   // tracked per pack size, so billing has to pick a specific variant, not
   // just the parent product.
@@ -309,6 +424,7 @@ export function InvoiceForm({ businessId, business, customers = [], products = [
           packSize: item.packSize || undefined,
           cdRate: layout === 'retail' ? Number(item.cdRate) || 0 : undefined,
           giftNote: layout === 'retail' ? (item.giftNote?.trim() || undefined) : undefined,
+          customFields: item.customFields && Object.keys(item.customFields).length > 0 ? item.customFields : undefined,
         })),
       }
 
@@ -515,25 +631,75 @@ export function InvoiceForm({ businessId, business, customers = [], products = [
       <div>
         <h3 className="text-lg font-semibold text-foreground mb-4">Invoice Items</h3>
         <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full text-sm border-collapse">
+          <table className="text-sm border-collapse" style={{ tableLayout: 'fixed' }}>
+            <colgroup>
+              {visibleColumns.map((key) => (
+                <col key={key} style={{ width: colWidth(key) }} />
+              ))}
+            </colgroup>
             <thead>
               <tr className="bg-accent/50 text-left text-xs font-medium text-muted-foreground">
-                <th className="px-2 py-2 w-20">#</th>
-                <th className="px-2 py-2 w-64">Item</th>
-                {layout === 'retail' && <th className="px-2 py-2 w-10">HSN Code</th>}
-                {layout === 'retail' && <th className="px-2 py-2 w-20">Sold By</th>}
-                {layout === 'retail' && <th className="px-2 py-2 w-15 text-right">MRP</th>}
-                <th className="px-2 py-2 w-10 text-right">{isOffice ? 'Duration' : layout === 'retail' ? 'Unit' : 'Qty'}</th>
-                <th className="px-2 py-2 w-20 text-right">Rate</th>
-                {layout === 'retail' && <th className="px-2 py-2 w-10 text-right">CD%</th>}
-                {layout === 'retail' && <th className="px-2 py-2 w-20">Gift</th>}
-                <th className="px-2 py-2 w-20 text-right">Tax%</th>
-                {layout === 'retail' ? (
-                  <th className="px-2 py-2 w-20 text-right">Gross Amt</th>
-                ) : (
-                  <th className="px-2 py-2 w-20 text-right">Amount</th>
+                <th className="relative px-2 py-2 border border-border">
+                  <span className="block truncate">#</span>
+                  <ColumnResizeHandle onMouseDown={startResize('index')} />
+                </th>
+                <th className="relative px-2 py-2 border border-border">
+                  <span className="block truncate">Item</span>
+                  <ColumnResizeHandle onMouseDown={startResize('item')} />
+                </th>
+                {layout === 'retail' && (
+                  <th className="relative px-2 py-2 border border-border">
+                    <span className="block truncate">HSN Code</span>
+                    <ColumnResizeHandle onMouseDown={startResize('hsn')} />
+                  </th>
                 )}
-                <th className="px-2 py-2 w-20" />
+                {layout === 'retail' && (
+                  <th className="relative px-2 py-2 border border-border">
+                    <span className="block truncate">Sold By</span>
+                    <ColumnResizeHandle onMouseDown={startResize('soldBy')} />
+                  </th>
+                )}
+                {layout === 'retail' && (
+                  <th className="relative px-2 py-2 text-right border border-border">
+                    <span className="block truncate">MRP</span>
+                    <ColumnResizeHandle onMouseDown={startResize('mrp')} />
+                  </th>
+                )}
+                <th className="relative px-2 py-2 text-right border border-border">
+                  <span className="block truncate">{isOffice ? 'Duration' : layout === 'retail' ? 'Unit' : 'Qty'}</span>
+                  <ColumnResizeHandle onMouseDown={startResize('qty')} />
+                </th>
+                <th className="relative px-2 py-2 text-right border border-border">
+                  <span className="block truncate">Rate</span>
+                  <ColumnResizeHandle onMouseDown={startResize('rate')} />
+                </th>
+                {layout === 'retail' && (
+                  <th className="relative px-2 py-2 text-right border border-border">
+                    <span className="block truncate">CD%</span>
+                    <ColumnResizeHandle onMouseDown={startResize('cd')} />
+                  </th>
+                )}
+                {layout === 'retail' && (
+                  <th className="relative px-2 py-2 border border-border">
+                    <span className="block truncate">Gift</span>
+                    <ColumnResizeHandle onMouseDown={startResize('gift')} />
+                  </th>
+                )}
+                <th className="relative px-2 py-2 text-right border border-border">
+                  <span className="block truncate">Tax%</span>
+                  <ColumnResizeHandle onMouseDown={startResize('tax')} />
+                </th>
+                <th className="relative px-2 py-2 text-right border border-border">
+                  <span className="block truncate">{layout === 'retail' ? 'Gross Amt' : 'Amount'}</span>
+                  <ColumnResizeHandle onMouseDown={startResize('amount')} />
+                </th>
+                {invoiceColumns.map((col) => (
+                  <th key={col.key} className="relative px-2 py-2 border border-border">
+                    <span className="block truncate">{col.label}</span>
+                    <ColumnResizeHandle onMouseDown={startResize(col.key)} />
+                  </th>
+                ))}
+                <th className="px-2 py-2 border border-border" />
               </tr>
             </thead>
             <tbody>
@@ -544,13 +710,14 @@ export function InvoiceForm({ businessId, business, customers = [], products = [
                 const amount = lineAmount(item)
 
                 return (
-                  <tr key={index} className="border-t border-border align-top">
-                    <td className="px-2 py-2 text-muted-foreground">{index + 1}</td>
-                    <td className="px-2 py-2 relative">
+                  <tr key={index} className="align-top hover:bg-accent/30">
+                    <td className="px-2 py-2 border border-border text-muted-foreground">{index + 1}</td>
+                    <td className="px-2 py-2 border border-border relative">
                       <Input
                         ref={(el) => { descriptionInputRefs.current[index] = el }}
                         aria-label="Description"
                         placeholder="Type to search products..."
+                        className={CELL_FIELD_CLASS}
                         value={item.description}
                         onChange={(e) => {
                           handleItemChange(index, 'description', e.target.value)
@@ -567,23 +734,23 @@ export function InvoiceForm({ businessId, business, customers = [], products = [
                       )}
                     </td>
                     {layout === 'retail' && (
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2 border border-border">
                         <Input
                           aria-label="HSN Code"
                           placeholder="HSN"
-                          className="w-10"
+                          className={CELL_FIELD_CLASS}
                           value={item.hsnCode ?? ''}
                           onChange={(e) => handleItemChange(index, 'hsnCode', e.target.value)}
                         />
                       </td>
                     )}
                     {layout === 'retail' && (
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2 border border-border">
                         <Select
                           value={item.isLoose ? 'loose' : 'unit'}
                           onValueChange={(value) => handleSoldByChange(index, value ?? 'unit')}
                         >
-                          <SelectTrigger aria-label="Sold By" className="w-20">
+                          <SelectTrigger aria-label="Sold By" className={cn(CELL_FIELD_CLASS, 'w-full')}>
                             <SelectValue>
                               {(value: string) => SOLD_BY_OPTIONS.find(p => p.value === value)?.label ?? 'Piece'}
                             </SelectValue>
@@ -597,25 +764,25 @@ export function InvoiceForm({ businessId, business, customers = [], products = [
                       </td>
                     )}
                     {layout === 'retail' && (
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2 border border-border">
                         <Input
                           aria-label="MRP"
                           type="text"
                           inputMode="decimal"
-                          className="w-15 text-right"
+                          className={cn(CELL_FIELD_CLASS, 'text-right')}
                           value={item.mrp ?? ''}
                           onChange={(e) => handleItemChange(index, 'mrp', e.target.value === '' ? '' : e.target.value)}
                         />
                       </td>
                     )}
-                    <td className="px-2 py-2">
+                    <td className="px-2 py-2 border border-border">
                       {layout === 'retail' ? (
                         !item.isLoose ? (
                           <Input
                             aria-label="Quantity"
                             type="text"
                             inputMode="numeric"
-                            className="w-10 text-right"
+                            className={cn(CELL_FIELD_CLASS, 'text-right')}
                             placeholder="1"
                             value={item.quantity}
                             onChange={(e) => handleItemChange(index, 'quantity', e.target.value === '' ? '' : e.target.value)}
@@ -625,7 +792,7 @@ export function InvoiceForm({ businessId, business, customers = [], products = [
                             aria-label="Grams"
                             type="text"
                             inputMode="decimal"
-                            className="w-10 text-right"
+                            className={cn(CELL_FIELD_CLASS, 'text-right')}
                             placeholder="Grams"
                             value={item.quantity}
                             onChange={(e) => handleLooseGramsChange(index, e.target.value)}
@@ -637,7 +804,7 @@ export function InvoiceForm({ businessId, business, customers = [], products = [
                             aria-label={isOffice ? 'Duration' : 'Quantity'}
                             type="text"
                             inputMode="decimal"
-                            className="w-10 text-right"
+                            className={cn(CELL_FIELD_CLASS, 'text-right')}
                             placeholder={isOffice ? '1' : item.productId ? '' : 'Flat fee'}
                             value={item.quantity}
                             onChange={(e) => handleItemChange(index, 'quantity', e.target.value === '' ? '' : e.target.value)}
@@ -648,7 +815,7 @@ export function InvoiceForm({ businessId, business, customers = [], products = [
                               value={item.unit ?? 'month'}
                               onValueChange={(value) => handleItemChange(index, 'unit', value ?? 'month')}
                             >
-                              <SelectTrigger className="w-full mt-1 h-7 text-xs">
+                              <SelectTrigger className={cn(CELL_FIELD_CLASS, 'w-full mt-1 h-7 text-xs')}>
                                 <SelectValue>{(value: string) => TIME_UNITS.find(u => u.value === value)?.label ?? 'Month'}</SelectValue>
                               </SelectTrigger>
                               <SelectContent>
@@ -661,46 +828,46 @@ export function InvoiceForm({ businessId, business, customers = [], products = [
                         </>
                       )}
                     </td>
-                    <td className="px-2 py-2">
+                    <td className="px-2 py-2 border border-border">
                       <Input
                         aria-label="Rate"
                         type="text"
                         inputMode="decimal"
-                        className="w-20 text-right"
+                        className={cn(CELL_FIELD_CLASS, 'text-right')}
                         value={item.unitPrice}
                         onChange={(e) => handleItemChange(index, 'unitPrice', e.target.value)}
                         required
                       />
                     </td>
                     {layout === 'retail' && (
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2 border border-border">
                         <Input
                           aria-label="CD%"
                           type="text"
                           inputMode="decimal"
-                          className="w-10 text-right"
+                          className={cn(CELL_FIELD_CLASS, 'text-right')}
                           value={item.cdRate ?? 0}
                           onChange={(e) => handleItemChange(index, 'cdRate', e.target.value)}
                         />
                       </td>
                     )}
                     {layout === 'retail' && (
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2 border border-border">
                         <Input
                           aria-label="Gift"
                           placeholder="e.g. Free gift box"
-                          className="w-20"
+                          className={CELL_FIELD_CLASS}
                           value={item.giftNote ?? ''}
                           onChange={(e) => handleItemChange(index, 'giftNote', e.target.value)}
                         />
                       </td>
                     )}
-                    <td className="px-2 py-2">
+                    <td className="px-2 py-2 border border-border">
                       <Select
                         value={String(item.taxRate)}
                         onValueChange={(value) => handleItemChange(index, 'taxRate', Number(value ?? 0))}
                       >
-                        <SelectTrigger className="w-20">
+                        <SelectTrigger className={cn(CELL_FIELD_CLASS, 'w-full')}>
                           <SelectValue>{(value: string) => `${value}%`}</SelectValue>
                         </SelectTrigger>
                         <SelectContent>
@@ -711,11 +878,23 @@ export function InvoiceForm({ businessId, business, customers = [], products = [
                       </Select>
                     </td>
                     {layout === 'retail' ? (
-                      <td className="px-2 py-2 text-right font-medium text-foreground whitespace-nowrap">{formatCurrency(gross)}</td>
+                      <td className="px-2 py-2 border border-border text-right font-medium text-foreground whitespace-nowrap">{formatCurrency(gross)}</td>
                     ) : (
-                      <td className="px-2 py-2 text-right font-medium text-foreground whitespace-nowrap">{formatCurrency(amount)}</td>
+                      <td className="px-2 py-2 border border-border text-right font-medium text-foreground whitespace-nowrap">{formatCurrency(amount)}</td>
                     )}
-                    <td className="px-2 py-2">
+                    {invoiceColumns.map((col) => (
+                      <td key={col.key} className="px-2 py-2 border border-border">
+                        <Input
+                          aria-label={col.label}
+                          type="text"
+                          inputMode={col.fieldType === 'number' ? 'decimal' : undefined}
+                          className={cn(CELL_FIELD_CLASS, col.fieldType === 'number' ? 'text-right' : undefined)}
+                          value={item.customFields?.[col.key] ?? ''}
+                          onChange={(e) => handleCustomFieldChange(index, col.key, e.target.value)}
+                        />
+                      </td>
+                    ))}
+                    <td className="px-2 py-2 border border-border">
                       {items.length > 1 && (
                         <Button
                           type="button"

@@ -3,6 +3,7 @@ import { getSession } from '@/lib/session'
 import { getBusiness } from '@/app/actions/businesses'
 import { DashboardHeader } from '@/components/dashboard-header'
 import { DashboardSidebar } from '@/components/dashboard-sidebar'
+import { SidebarProvider } from '@/components/sidebar-provider'
 
 export default async function BusinessLayout({
   children,
@@ -22,16 +23,18 @@ export default async function BusinessLayout({
   const business = await getBusiness(id).catch(() => null)
 
   return (
-    <div className="min-h-svh bg-background">
-      <div className="print:hidden">
-        <DashboardHeader user={session.user} />
-      </div>
-      <div className="flex">
-        <div className="print:hidden">
-          <DashboardSidebar businessId={id} businessType={business?.type} />
+    <SidebarProvider>
+      <div className="h-svh flex flex-col bg-background print:h-auto print:block">
+        <div className="print:hidden shrink-0">
+          <DashboardHeader user={session.user} />
         </div>
-        <main className="flex-1">{children}</main>
+        <div className="flex flex-1 min-h-0 print:block">
+          <div className="print:hidden">
+            <DashboardSidebar businessId={id} businessType={business?.type} />
+          </div>
+          <main className="flex-1 overflow-y-auto print:overflow-visible print:h-auto">{children}</main>
+        </div>
       </div>
-    </div>
+    </SidebarProvider>
   )
 }

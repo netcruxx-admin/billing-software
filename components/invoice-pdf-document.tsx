@@ -1,6 +1,6 @@
 import { Fragment } from 'react'
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
-import { formatDate, invoiceReferenceLabel, splitGst, unitLabel } from '@/lib/utils'
+import { formatDate, invoiceReferenceLabel, splitGst, unitLabel, type CustomFieldColumn } from '@/lib/utils'
 
 const inr = (amount: number) => `Rs. ${amount.toFixed(2)}`
 
@@ -23,6 +23,7 @@ const styles = StyleSheet.create({
   section: { marginBottom: 24 },
   divider: { borderBottomWidth: 1, borderBottomColor: '#cccccc', marginBottom: 16, paddingBottom: 16 },
   label: { fontSize: 8, fontWeight: 700, color: '#666666', letterSpacing: 1, marginBottom: 4 },
+  customFields: { fontSize: 8, color: '#666666', marginTop: 2 },
   tableHeader: {
     flexDirection: 'row',
     borderBottomWidth: 2,
@@ -81,10 +82,21 @@ interface InvoicePdfDocumentProps {
     unit?: string | null
     unitPrice: string | number
     amount: string | number
+    customFields?: Record<string, string> | null
   }>
+  customColumns?: CustomFieldColumn[]
 }
 
-export function InvoicePdfDocument({ business, customer, invoice, items }: InvoicePdfDocumentProps) {
+// Compact "Label: value · Label: value" line shown under the description —
+// simpler and more robust in a fixed-percentage-width PDF table than adding
+// more columns whose widths would need recalculating for every custom field.
+const customFieldsLine = (item: { customFields?: Record<string, string> | null }, customColumns: CustomFieldColumn[]) =>
+  customColumns
+    .filter((col) => item.customFields?.[col.key])
+    .map((col) => `${col.label}: ${item.customFields![col.key]}`)
+    .join('  ·  ')
+
+export function InvoicePdfDocument({ business, customer, invoice, items, customColumns = [] }: InvoicePdfDocumentProps) {
   const subtotal = Number(invoice.subtotal) || 0
   const total = Number(invoice.total) || 0
   const paidAmount = Number(invoice.paidAmount) || 0
@@ -159,14 +171,20 @@ export function InvoicePdfDocument({ business, customer, invoice, items }: Invoi
           <Text style={[styles.colPrice, styles.bold]}>Price</Text>
           <Text style={[styles.colAmount, styles.bold]}>Amount</Text>
         </View>
-        {items.map((item) => (
-          <View key={item.id} style={styles.tableRow}>
-            <Text style={styles.colDesc}>{item.description}</Text>
-            <Text style={styles.colQty}>{item.quantity != null ? `${item.quantity} ${unitLabel(item.unit)}` : '—'}</Text>
-            <Text style={styles.colPrice}>{inr(Number(item.unitPrice))}</Text>
-            <Text style={styles.colAmount}>{inr(Number(item.amount))}</Text>
-          </View>
-        ))}
+        {items.map((item) => {
+          const fieldsLine = customFieldsLine(item, customColumns)
+          return (
+            <View key={item.id} style={styles.tableRow}>
+              <View style={styles.colDesc}>
+                <Text>{item.description}</Text>
+                {fieldsLine && <Text style={styles.customFields}>{fieldsLine}</Text>}
+              </View>
+              <Text style={styles.colQty}>{item.quantity != null ? `${item.quantity} ${unitLabel(item.unit)}` : '—'}</Text>
+              <Text style={styles.colPrice}>{inr(Number(item.unitPrice))}</Text>
+              <Text style={styles.colAmount}>{inr(Number(item.amount))}</Text>
+            </View>
+          )
+        })}
 
         <View style={[styles.totalsBox, { marginTop: 16 }]}>
           <View style={styles.totalsRow}>

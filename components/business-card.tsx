@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { Briefcase, Building2, Coffee, Mail, Phone, Store, UtensilsCrossed, type LucideIcon } from 'lucide-react'
 
 interface BusinessCardProps {
   business: {
@@ -13,24 +14,17 @@ interface BusinessCardProps {
   }
 }
 
+const BUSINESS_TYPE_ICONS: Record<string, LucideIcon> = {
+  restaurant: UtensilsCrossed,
+  hotel: Building2,
+  store: Store,
+  cafe: Coffee,
+  office: Briefcase,
+}
+
 export function BusinessCard({ business }: BusinessCardProps) {
   const router = useRouter()
-
-  const getBusinessTypeIcon = (type: string) => {
-    switch (type.toLowerCase()) {
-      case 'restaurant':
-        return '🍽️'
-      case 'bar':
-        return '🍹'
-      case 'hotel':
-        return '🏨'
-      case 'store':
-      case 'general store':
-        return '🛒'
-      default:
-        return '💼'
-    }
-  }
+  const TypeIcon = BUSINESS_TYPE_ICONS[business.type.toLowerCase()] ?? Building2
 
   return (
     <div
@@ -38,7 +32,9 @@ export function BusinessCard({ business }: BusinessCardProps) {
       className="bg-card border border-border rounded-lg p-6 hover:shadow-lg hover:border-primary/50 transition cursor-pointer h-full"
     >
       <div className="flex items-start gap-4 mb-4">
-        <div className="text-4xl">{getBusinessTypeIcon(business.type)}</div>
+        <div className="size-11 shrink-0 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+          <TypeIcon className="size-5" />
+        </div>
         <div className="flex-1">
           <h3 className="font-bold text-lg text-foreground">{business.name}</h3>
           <p className="text-sm text-muted-foreground capitalize">{business.type}</p>
@@ -47,8 +43,16 @@ export function BusinessCard({ business }: BusinessCardProps) {
 
       {(business.email || business.phone) && (
         <div className="text-sm text-muted-foreground space-y-1">
-          {business.email && <p>📧 {business.email}</p>}
-          {business.phone && <p>📱 {business.phone}</p>}
+          {business.email && (
+            <p className="flex items-center gap-2">
+              <Mail className="size-3.5 shrink-0" /> {business.email}
+            </p>
+          )}
+          {business.phone && (
+            <p className="flex items-center gap-2">
+              <Phone className="size-3.5 shrink-0" /> {business.phone}
+            </p>
+          )}
         </div>
       )}
 

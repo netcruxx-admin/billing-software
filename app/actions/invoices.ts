@@ -23,6 +23,7 @@ export interface InvoiceItem {
   tdRate: number
   discountAmount: number
   giftNote?: string | null
+  customFields?: Record<string, string> | null
   createdAt: string
 }
 
@@ -95,6 +96,7 @@ export async function createInvoice(businessId: string, data: {
     cdRate?: number
     tdRate?: number
     giftNote?: string
+    customFields?: Record<string, string>
   }>
   notes?: string
   referenceNote?: string

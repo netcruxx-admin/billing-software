@@ -1,5 +1,13 @@
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
-import { formatDate, groupByTaxRateIncludingZero, numberToWords, paymentModeLabel, retailQtyLabel, splitGst } from '@/lib/utils'
+import {
+  formatDate,
+  groupByTaxRateIncludingZero,
+  numberToWords,
+  paymentModeLabel,
+  retailQtyLabel,
+  splitGst,
+  type CustomFieldColumn,
+} from '@/lib/utils'
 
 const inr = (amount: number) => `Rs. ${amount.toFixed(2)}`
 
@@ -14,6 +22,7 @@ const styles = StyleSheet.create({
   businessName: { fontSize: 16, fontWeight: 700, textAlign: 'center' },
   divider: { borderBottomWidth: 1, borderBottomColor: '#1a1a1a', paddingBottom: 6, marginBottom: 6 },
   label: { fontSize: 7, fontWeight: 700, color: '#666666', letterSpacing: 1, marginBottom: 3 },
+  customFields: { fontSize: 6, color: '#666666', marginTop: 1 },
   table: { borderTopWidth: 1, borderLeftWidth: 1, borderColor: '#1a1a1a' },
   tableHeader: {
     flexDirection: 'row',
@@ -96,10 +105,21 @@ interface InvoicePdfDocumentRetailProps {
     cdRate?: number | null
     giftNote?: string | null
     discountAmount?: string | number | null
+    customFields?: Record<string, string> | null
   }>
+  customColumns?: CustomFieldColumn[]
 }
 
-export function InvoicePdfDocumentRetail({ business, customer, invoice, items }: InvoicePdfDocumentRetailProps) {
+// Compact "Label: value · Label: value" line under the item name — simpler
+// and more robust in a fixed-percentage-width PDF table than recalculating
+// column widths for however many custom fields a business has defined.
+const customFieldsLine = (item: { customFields?: Record<string, string> | null }, customColumns: CustomFieldColumn[]) =>
+  customColumns
+    .filter((col) => item.customFields?.[col.key])
+    .map((col) => `${col.label}: ${item.customFields![col.key]}`)
+    .join('  ·  ')
+
+export function InvoicePdfDocumentRetail({ business, customer, invoice, items, customColumns = [] }: InvoicePdfDocumentRetailProps) {
   const subtotal = Number(invoice.subtotal) || 0
   const total = Number(invoice.total) || 0
   const roundedTotal = Math.round(total)
@@ -175,10 +195,14 @@ export function InvoicePdfDocumentRetail({ business, customer, invoice, items }:
             const amount = Number(item.amount) || 0
             const discountAmount = Number(item.discountAmount) || 0
             const grossAmt = amount + discountAmount
+            const fieldsLine = customFieldsLine(item, customColumns)
             return (
               <View key={item.id} style={styles.tableRow}>
                 <Text style={[styles.cellBase, styles.colSn]}>{index + 1}</Text>
-                <Text style={[styles.cellBase, styles.colItem]}>{item.description}</Text>
+                <View style={[styles.cellBase, styles.colItem]}>
+                  <Text>{item.description}</Text>
+                  {fieldsLine && <Text style={styles.customFields}>{fieldsLine}</Text>}
+                </View>
                 <Text style={[styles.cellBase, styles.colCategory]}>{item.categoryName || '—'}</Text>
                 <Text style={[styles.cellBase, styles.colHsn]}>{item.hsnCode || '—'}</Text>
                 <Text style={[styles.cellBase, styles.colPack]}>{item.packSize || '—'}</Text>

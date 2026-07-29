@@ -181,6 +181,7 @@ def create_invoice(
                 td_rate=td_rate,
                 discount_amount=discount_amount,
                 gift_note=gift_note,
+                custom_fields=item.custom_fields or None,
             )
         )
         if item.variant_id and item.variant_id in variants_by_id:

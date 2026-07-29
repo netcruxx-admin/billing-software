@@ -201,6 +201,30 @@ class CustomerOut(CamelModel):
     updated_at: datetime
 
 
+# --- Invoice Columns --------------------------------------------------------
+
+class InvoiceColumnCreate(CamelModel):
+    label: str
+    field_type: str = "text"
+
+
+class InvoiceColumnUpdate(CamelModel):
+    label: str | None = None
+    field_type: str | None = None
+    sort_order: int | None = None
+
+
+class InvoiceColumnOut(CamelModel):
+    id: str
+    business_id: str
+    key: str
+    label: str
+    field_type: str
+    sort_order: int
+    created_at: datetime
+    updated_at: datetime
+
+
 # --- Invoice ---------------------------------------------------------------
 
 class InvoiceItemCreate(CamelModel):
@@ -226,6 +250,9 @@ class InvoiceItemCreate(CamelModel):
     # complimentary gift — billed at zero price/tax regardless of
     # unit_price, though unit_price is still stored/shown as entered.
     gift_note: str | None = None
+    # Values for this business's custom invoice columns, keyed by
+    # InvoiceColumn.key.
+    custom_fields: dict[str, str] | None = None
 
 
 class InvoiceCreate(CamelModel):
@@ -262,6 +289,7 @@ class InvoiceItemOut(CamelModel):
     td_rate: float
     discount_amount: float
     gift_note: str | None
+    custom_fields: dict[str, str] | None = None
     created_at: datetime
 
 

@@ -30,6 +30,7 @@ NEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("discount_amount", "FLOAT DEFAULT 0"),
         ("gift_note", "VARCHAR"),
         ("variant_id", "VARCHAR"),
+        ("custom_fields", "TEXT"),
     ],
     "purchase_items": [
         ("variant_id", "VARCHAR"),

@@ -4,12 +4,21 @@ import { getInvoiceById, getInvoiceItems } from '@/app/actions/invoices'
 import { getPaymentHistory } from '@/app/actions/payments'
 import { getBusiness } from '@/app/actions/businesses'
 import { getCustomer } from '@/app/actions/customers'
+import { getInvoiceColumns } from '@/app/actions/invoice-columns'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { PaymentForm } from '@/components/payment-form'
 import { InvoicePrintView } from '@/components/invoice-print-view'
 import { InvoicePrintViewRetail } from '@/components/invoice-print-view-retail'
-import { formatCurrency, groupByTaxRateIncludingZero, invoiceLayout, paymentMethodLabel, splitGst } from '@/lib/utils'
+import {
+  formatCurrency,
+  groupByTaxRateIncludingZero,
+  invoiceLayout,
+  invoiceStatusBadgeClass,
+  paymentMethodLabel,
+  resolveCustomFieldColumns,
+  splitGst,
+} from '@/lib/utils'
 
 type InvoiceDetailPageProps = {
   params: Promise<{ id: string; invoiceId: string }>
@@ -25,6 +34,10 @@ export default async function InvoiceDetailPage({ params }: InvoiceDetailPagePro
       getPaymentHistory(invoiceId, id),
       getBusiness(id),
     ])
+    // Custom invoice columns are an optional enhancement — don't let a
+    // failure here (e.g. backend not yet migrated) break viewing the invoice.
+    const invoiceColumns = await getInvoiceColumns(id).catch(() => [])
+    const customColumns = resolveCustomFieldColumns(items, invoiceColumns)
 
     let customer = null
     if (invoiceData.customerId) {
@@ -35,12 +48,7 @@ export default async function InvoiceDetailPage({ params }: InvoiceDetailPagePro
       }
     }
 
-    const statusColor =
-      invoiceData.status === 'paid'
-        ? 'bg-green-100 text-green-800'
-        : invoiceData.status === 'partial'
-          ? 'bg-yellow-100 text-yellow-800'
-          : 'bg-blue-100 text-blue-800'
+    const statusColor = invoiceStatusBadgeClass(invoiceData.status)
 
     const totalAmount = parseFloat(invoiceData.total as any)
     const paidAmount = parseFloat(invoiceData.paidAmount as any) || 0
@@ -79,9 +87,9 @@ export default async function InvoiceDetailPage({ params }: InvoiceDetailPagePro
             {/* Bill — same layout as Print / Download PDF */}
             <div className="mb-8">
               {layout === 'retail' ? (
-                <InvoicePrintViewRetail business={business} customer={customer} invoice={invoiceData} items={items} />
+                <InvoicePrintViewRetail business={business} customer={customer} invoice={invoiceData} items={items} customColumns={customColumns} />
               ) : (
-                <InvoicePrintView business={business} customer={customer} invoice={invoiceData} items={items} />
+                <InvoicePrintView business={business} customer={customer} invoice={invoiceData} items={items} customColumns={customColumns} />
               )}
             </div>
 
