@@ -179,7 +179,7 @@ const lineAmount = (item: InvoiceLineItem) => {
 
 export function InvoiceForm({ businessId, business, customers = [], products = [], invoiceColumns = [] }: InvoiceFormProps) {
   const router = useRouter()
-  const isOffice = business?.type === 'office'
+  const isOffice = business?.type === 'office' || business?.name === 'Net-Crux'
   const buildItem = (): InvoiceLineItem => ({ ...DEFAULT_ITEM, unit: isOffice ? 'month' : undefined, customFields: {} })
   const [loading, setLoading] = useState(false)
   const [items, setItems] = useState<InvoiceLineItem[]>([buildItem()])

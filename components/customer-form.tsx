@@ -2,23 +2,34 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createCustomer } from '@/app/actions/customers'
+import { createCustomer, updateCustomer } from '@/app/actions/customers'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
-interface CustomerFormProps {
-  businessId: string
+interface ExistingCustomer {
+  id: string
+  name: string
+  email?: string | null
+  phone?: string | null
+  address?: string | null
+  taxId?: string | null
 }
 
-export function CustomerForm({ businessId }: CustomerFormProps) {
+interface CustomerFormProps {
+  businessId: string
+  customer?: ExistingCustomer
+}
+
+export function CustomerForm({ businessId, customer }: CustomerFormProps) {
   const router = useRouter()
+  const isEditing = Boolean(customer)
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    address: '',
-    taxId: '',
+    name: customer?.name ?? '',
+    email: customer?.email ?? '',
+    phone: customer?.phone ?? '',
+    address: customer?.address ?? '',
+    taxId: customer?.taxId ?? '',
   })
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -31,11 +42,15 @@ export function CustomerForm({ businessId }: CustomerFormProps) {
     setLoading(true)
 
     try {
-      await createCustomer(businessId, formData)
+      if (isEditing && customer) {
+        await updateCustomer(customer.id, businessId, formData)
+      } else {
+        await createCustomer(businessId, formData)
+      }
       router.push(`/dashboard/businesses/${businessId}?tab=customers`)
     } catch (error) {
-      console.error('Failed to create customer:', error)
-      alert('Failed to create customer')
+      console.error('Failed to save customer:', error)
+      alert('Failed to save customer')
     } finally {
       setLoading(false)
     }
@@ -113,7 +128,7 @@ export function CustomerForm({ businessId }: CustomerFormProps) {
 
       <div className="flex gap-4 pt-4">
         <Button type="submit" disabled={loading || !formData.name} className="flex-1">
-          {loading ? 'Creating...' : 'Create Customer'}
+          {loading ? 'Saving...' : isEditing ? 'Save Changes' : 'Create Customer'}
         </Button>
         <Button type="button" variant="outline" onClick={() => router.back()} className="flex-1">
           Cancel

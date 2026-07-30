@@ -1,6 +1,7 @@
 import { Fragment } from 'react'
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
+import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer'
 import { formatDate, invoiceReferenceLabel, splitGst, unitLabel, type CustomFieldColumn } from '@/lib/utils'
+import { NET_CRUX_LOGO_DATA_URI } from '@/lib/net-crux-logo'
 
 const inr = (amount: number) => `Rs. ${amount.toFixed(2)}`
 
@@ -17,6 +18,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingTop: 10,
   },
+  logoImage: { width: 40, height: 40, borderRadius: 6 },
   title: { fontSize: 24, fontWeight: 300, color: '#333333' },
   bold: { fontWeight: 700 },
   muted: { color: '#666666' },
@@ -103,12 +105,20 @@ export function InvoicePdfDocument({ business, customer, invoice, items, customC
   const amountDue = total - paidAmount
   const taxBreakdown = invoice.taxBreakdown ?? []
   const referenceLabel = invoiceReferenceLabel(business.type)
+  const isOffice = business.type === 'office' || business.name === 'Net-Crux'
 
   return (
     <Document>
       <Page size="A4" style={styles.page}>
         <View style={[styles.row, styles.section]}>
-          <Text style={styles.logo}>{business.name.charAt(0).toUpperCase()}</Text>
+          {business.name === 'Net-Crux' ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Image style={styles.logoImage} src={NET_CRUX_LOGO_DATA_URI} />
+              <Text style={[styles.bold, { marginLeft: 8 }]}>Net-Crux IT Services</Text>
+            </View>
+          ) : (
+            <Text style={styles.logo}>{business.name.charAt(0).toUpperCase()}</Text>
+          )}
           <Text style={styles.title}>INVOICE</Text>
         </View>
 
@@ -116,6 +126,7 @@ export function InvoicePdfDocument({ business, customer, invoice, items, customC
           <View />
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={styles.bold}>{business.name}</Text>
+            {business.taxId && <Text>GSTIN: {business.taxId}</Text>}
             {business.address && <Text>{business.address}</Text>}
             {business.phone && <Text>{business.phone}</Text>}
             {business.email && <Text>{business.email}</Text>}
@@ -167,7 +178,7 @@ export function InvoicePdfDocument({ business, customer, invoice, items, customC
 
         <View style={styles.tableHeader}>
           <Text style={[styles.colDesc, styles.bold]}>Product/Service</Text>
-          <Text style={[styles.colQty, styles.bold]}>Quantity</Text>
+          <Text style={[styles.colQty, styles.bold]}>{isOffice ? 'Duration' : 'Quantity'}</Text>
           <Text style={[styles.colPrice, styles.bold]}>Price</Text>
           <Text style={[styles.colAmount, styles.bold]}>Amount</Text>
         </View>
@@ -223,11 +234,6 @@ export function InvoicePdfDocument({ business, customer, invoice, items, customC
           </View>
         )}
 
-        {business.taxId && (
-          <View style={styles.footer}>
-            <Text>GSTIN: {business.taxId}</Text>
-          </View>
-        )}
       </Page>
     </Document>
   )

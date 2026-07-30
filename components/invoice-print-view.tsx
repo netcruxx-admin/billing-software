@@ -48,14 +48,23 @@ export function InvoicePrintView({ business, customer, invoice, items, customCol
   const amountDue = total - paidAmount
   const taxBreakdown = invoice.taxBreakdown ?? []
   const referenceLabel = invoiceReferenceLabel(business.type)
+  const isOffice = business.type === 'office' || business.name === 'Net-Crux'
 
   return (
     <div className="bg-white text-black max-w-3xl mx-auto p-10 text-sm leading-relaxed shadow-sm print:shadow-none">
       {/* Header */}
       <div className="flex items-start justify-between mb-8">
-        <div className="w-14 h-14 rounded-lg bg-neutral-900 text-white flex items-center justify-center text-xl font-bold">
-          {business.name.charAt(0).toUpperCase()}
-        </div>
+        {business.name === 'Net-Crux' ? (
+          <div className="flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/net-crux-logo.png" alt="Net-Crux" className="w-14 h-14 rounded-lg object-contain" />
+            <span className="font-bold">Net-Crux IT Services</span>
+          </div>
+        ) : (
+          <div className="w-14 h-14 rounded-lg bg-neutral-900 text-white flex items-center justify-center text-xl font-bold">
+            {business.name.charAt(0).toUpperCase()}
+          </div>
+        )}
         <div className="text-right">
           <h1 className="text-3xl font-light tracking-wide text-neutral-800">INVOICE</h1>
         </div>
@@ -65,6 +74,7 @@ export function InvoicePrintView({ business, customer, invoice, items, customCol
         <div />
         <div className="text-right">
           <p className="font-bold">{business.name}</p>
+          {business.taxId && <p>GSTIN: {business.taxId}</p>}
           {business.address && <p>{business.address}</p>}
           {business.phone && <p>{business.phone}</p>}
           {business.email && <p>{business.email}</p>}
@@ -124,7 +134,7 @@ export function InvoicePrintView({ business, customer, invoice, items, customCol
         <thead>
           <tr className="border-b-2 border-neutral-800 text-left">
             <th className="pb-2 font-semibold">Product/Service</th>
-            <th className="pb-2 font-semibold text-right">Quantity</th>
+            <th className="pb-2 font-semibold text-right">{isOffice ? 'Duration' : 'Quantity'}</th>
             <th className="pb-2 font-semibold text-right">Price</th>
             <th className="pb-2 font-semibold text-right">Amount</th>
             {customColumns.map((col) => (
@@ -190,11 +200,6 @@ export function InvoicePrintView({ business, customer, invoice, items, customCol
         </div>
       )}
 
-      {business.taxId && (
-        <div className="pt-6 border-t border-neutral-300 text-xs text-neutral-500">
-          <p>GSTIN: {business.taxId}</p>
-        </div>
-      )}
     </div>
   )
 }

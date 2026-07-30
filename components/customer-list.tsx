@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { DeleteButton } from '@/components/delete-button'
 import { deleteCustomer } from '@/app/actions/customers'
 
@@ -29,6 +30,11 @@ export function CustomerList({ customers, businessId }: CustomerListProps) {
           </div>
           <div className="flex items-center gap-4">
             {c.phone && <p className="text-sm text-muted-foreground">{c.phone}</p>}
+            <Link href={`/dashboard/businesses/${businessId}/customers/${c.id}`}>
+              <button className="text-primary hover:text-primary/80 text-sm font-medium px-2">
+                Edit
+              </button>
+            </Link>
             <DeleteButton
               action={() => deleteCustomer(c.id, businessId)}
               confirmMessage={`Delete ${c.name}? This cannot be undone.`}
